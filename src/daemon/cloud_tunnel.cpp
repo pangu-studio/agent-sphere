@@ -598,26 +598,16 @@ bool CloudTunnel::Connect(std::string* error) {
             if (error) *error = "SSL_CTX_new failed";
             return false;
         }
-        // Pin TLS 1.2 (both ends). Why not 1.3:
-        //   In TLS 1.3 the client is allowed to start sending application
-        //   data ("1-RTT early write") immediately after its Finished,
-        //   without waiting for the server to acknowledge. OpenSSL takes
-        //   advantage of this and packs Finished + the first SSL_write()
-        //   call into the same TLS record. Cloudflare's edge has been
-        //   observed to reset (TCP RST after a tiny encrypted alert) when
-        //   the very first byte of application data lands in that same
-        //   record on certain hostnames, even though the behaviour is
-        //   spec-compliant. Forcing TLS 1.2 here removes that window:
-        //   in 1.2 the client must wait for the server's CCS+Finished
-        //   before any application data, so the GET ... Upgrade reaches
-        //   CF in a clean record and the WebSocket handshake completes.
-        //
-        //   We still keep the 1.2 floor we already had, so older edge
-        //   middleboxes are also fine. If CF ever requires 1.3, revisit
-        //   by adding a manual post-handshake read or SSL_set_mode flag
-        //   that disables the coalescing.
+        // Floor at TLS 1.2; let OpenSSL negotiate the highest version the
+        // peer supports (typically TLS 1.3 with Cloudflare). We previously
+        // also pinned the *max* to 1.2 because tcpdump showed an early
+        // Application Data record landing before the client's Finished,
+        // which Cloudflare rejected with a fatal `unexpected_message`
+        // alert. The real cause was a tick-thread race that called
+        // SSL_write() while SSL_connect() was still in flight (see
+        // connected_ in cloud_tunnel.h); now that the gate is correct
+        // there is no reason to forgo 1.3.
         SSL_CTX_set_min_proto_version(ssl_ctx_, TLS1_2_VERSION);
-        SSL_CTX_set_max_proto_version(ssl_ctx_, TLS1_2_VERSION);
         SSL_CTX_set_default_verify_paths(ssl_ctx_);
         SSL_CTX_set_verify(ssl_ctx_, SSL_VERIFY_PEER, nullptr);
         // Advertise ALPN "http/1.1" on the TLS ClientHello. CF and other
@@ -2091,7 +2081,7 @@ nlohmann::json CloudTunnel::VmResourcesSnapshot() const {
 }
 
 void CloudTunnel::PushVmStateChanged(const std::string& vm_id, const VmRuntimeInfo& info) {
-    if (!connected_.load()) return;
+    if (fd_ < 0) return;
     (void)SendJson({
         {"id", GenerateUuid()},
         {"type", "vm.state_changed"},
@@ -2105,7 +2095,7 @@ void CloudTunnel::PushVmStateChanged(const std::string& vm_id, const VmRuntimeIn
 }
 
 void CloudTunnel::PushImageCachedAdded(const std::string& cache_id, const std::string& image_name) {
-    if (!connected_.load()) return;
+    if (fd_ < 0) return;
     (void)SendJson({
         {"id", GenerateUuid()},
         {"type", "image.cached.added"},
@@ -2118,7 +2108,7 @@ void CloudTunnel::PushImageCachedAdded(const std::string& cache_id, const std::s
 }
 
 void CloudTunnel::PushImageCachedRemoved(const std::string& cache_id) {
-    if (!connected_.load()) return;
+    if (fd_ < 0) return;
     (void)SendJson({
         {"id", GenerateUuid()},
         {"type", "image.cached.removed"},
@@ -2128,7 +2118,7 @@ void CloudTunnel::PushImageCachedRemoved(const std::string& cache_id) {
 }
 
 void CloudTunnel::PushDownloadProgress(const DownloadJob& job) {
-    if (!connected_.load()) return;
+    if (fd_ < 0) return;
     (void)SendJson({
         {"id", GenerateUuid()},
         {"type", "image.download.progress"},
@@ -2138,7 +2128,7 @@ void CloudTunnel::PushDownloadProgress(const DownloadJob& job) {
 }
 
 void CloudTunnel::PushDownloadTerminal(const DownloadJob& job) {
-    if (!connected_.load()) return;
+    if (fd_ < 0) return;
     const std::string type = job.status == "done"
         ? "image.download.completed"
         : (job.status == "cancelled" ? "image.download.cancelled" : "image.download.failed");
