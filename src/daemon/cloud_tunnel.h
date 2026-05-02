@@ -114,6 +114,14 @@ private:
     SSL_CTX* ssl_ctx_ = nullptr;
     SSL* ssl_ = nullptr;
     bool tls_enabled_ = false;
+    // True only after the TLS handshake (if any) and the WebSocket upgrade
+    // have completed and we are ready to send WS frames. The tick thread
+    // and any other background producer must gate writes on this rather
+    // than `fd_ >= 0`: with TLS the socket is alive long before SSL_write
+    // can be safely called, and a stray frame written during the handshake
+    // window lands on the wire as a bogus "Application Data" record that
+    // Cloudflare answers with a fatal `unexpected_message` alert.
+    std::atomic<bool> connected_{false};
     std::mutex send_mu_;
     std::string host_id_;
     // Pairing state: when device.token exists on disk we reconnect with the

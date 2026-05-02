@@ -485,6 +485,10 @@ void CloudTunnel::Stop() {
 }
 
 void CloudTunnel::Disconnect() {
+    // Flip the gate first so any background producer that wakes up mid-
+    // teardown bails out instead of racing into SSL_write on a half-closed
+    // SSL object.
+    connected_.store(false);
     if (ssl_) {
         // Best-effort shutdown; SSL_shutdown returning 0 means peer hasn't
         // sent close_notify yet, but we always close the underlying fd next
@@ -692,6 +696,10 @@ bool CloudTunnel::Connect(std::string* error) {
         if (error) *error = "cloud gateway did not accept WebSocket upgrade";
         return false;
     }
+    // Only now is it safe for the tick thread / log flusher / event
+    // callbacks to write WS frames. See cloud_tunnel.h::connected_ for why
+    // gating on fd_ alone produced a TLS `unexpected_message` regression.
+    connected_.store(true);
     return true;
 }
 
@@ -729,6 +737,12 @@ bool CloudTunnel::TransportRecv(void* data, size_t size) {
 
 bool CloudTunnel::SendJson(const nlohmann::json& value) {
     std::lock_guard<std::mutex> lock(send_mu_);
+    // Guard against background producers (tick thread, log flusher, runtime
+    // event callbacks) that race ahead of the TLS+WS handshake. Writing a
+    // WebSocket frame onto the SSL session while SSL_connect() is still in
+    // flight makes OpenSSL emit it as an early Application Data record,
+    // which Cloudflare fatally rejects with `unexpected_message`.
+    if (!connected_.load()) return false;
     if (fd_ < 0) return false;
     const std::string payload = value.dump();
     std::vector<uint8_t> frame;
@@ -1024,7 +1038,7 @@ nlohmann::json CloudTunnel::HostResourcesPayload() const {
         {"runtime_path", config_.runtime_path},
         {"daemon_version", TENBOX_VERSION},
         {"daemon_uptime_seconds", std::max<int64_t>(0, UnixNow() - start_time_seconds_)},
-        {"cloud_connected", fd_ >= 0},
+        {"cloud_connected", connected_.load()},
         {"tenbox_vm_memory_bytes", vm_rss},
         {"image_cache_bytes", CachedDirectorySizeBytes(images_dir)},
         {"encoder_caps", EncoderCapabilitiesCached()},
@@ -1950,19 +1964,20 @@ void CloudTunnel::TickMain() {
     // we observe an fd_ transition so reconnects also push a fresh snapshot.
     auto next_host = Clock::now();
     auto next_vm = Clock::now() + kVmResourcesInterval;
-    int last_fd = fd_;
+    bool last_connected = connected_.load();
 
     while (running_) {
         const auto now = Clock::now();
+        const bool is_connected = connected_.load();
 
-        if (last_fd < 0 && fd_ >= 0) {
+        if (!last_connected && is_connected) {
             // Tunnel just (re)connected — refresh the host snapshot
             // immediately rather than waiting up to kHostResourcesInterval.
             next_host = now;
         }
-        last_fd = fd_;
+        last_connected = is_connected;
 
-        if (fd_ >= 0) {
+        if (is_connected) {
             if (now >= next_host) {
                 // Reuse the full HostResourcesPayload so resource ticks also
                 // carry daemon_version / uptime / encoder_caps etc. The
@@ -2041,7 +2056,7 @@ void CloudTunnel::FlushLogBuffers() {
         if (log_buffer_.empty()) return;
         drained.swap(log_buffer_);
     }
-    if (fd_ < 0) return;  // Drop silently when offline; tail RPC will catch up.
+    if (!connected_.load()) return;  // Drop silently when offline; tail RPC will catch up.
     for (auto& [vm_id, lines] : drained) {
         if (lines.empty()) continue;
         nlohmann::json arr = nlohmann::json::array();
@@ -2076,7 +2091,7 @@ nlohmann::json CloudTunnel::VmResourcesSnapshot() const {
 }
 
 void CloudTunnel::PushVmStateChanged(const std::string& vm_id, const VmRuntimeInfo& info) {
-    if (fd_ < 0) return;
+    if (!connected_.load()) return;
     (void)SendJson({
         {"id", GenerateUuid()},
         {"type", "vm.state_changed"},
@@ -2090,7 +2105,7 @@ void CloudTunnel::PushVmStateChanged(const std::string& vm_id, const VmRuntimeIn
 }
 
 void CloudTunnel::PushImageCachedAdded(const std::string& cache_id, const std::string& image_name) {
-    if (fd_ < 0) return;
+    if (!connected_.load()) return;
     (void)SendJson({
         {"id", GenerateUuid()},
         {"type", "image.cached.added"},
@@ -2103,7 +2118,7 @@ void CloudTunnel::PushImageCachedAdded(const std::string& cache_id, const std::s
 }
 
 void CloudTunnel::PushImageCachedRemoved(const std::string& cache_id) {
-    if (fd_ < 0) return;
+    if (!connected_.load()) return;
     (void)SendJson({
         {"id", GenerateUuid()},
         {"type", "image.cached.removed"},
@@ -2113,7 +2128,7 @@ void CloudTunnel::PushImageCachedRemoved(const std::string& cache_id) {
 }
 
 void CloudTunnel::PushDownloadProgress(const DownloadJob& job) {
-    if (fd_ < 0) return;
+    if (!connected_.load()) return;
     (void)SendJson({
         {"id", GenerateUuid()},
         {"type", "image.download.progress"},
@@ -2123,7 +2138,7 @@ void CloudTunnel::PushDownloadProgress(const DownloadJob& job) {
 }
 
 void CloudTunnel::PushDownloadTerminal(const DownloadJob& job) {
-    if (fd_ < 0) return;
+    if (!connected_.load()) return;
     const std::string type = job.status == "done"
         ? "image.download.completed"
         : (job.status == "cancelled" ? "image.download.cancelled" : "image.download.failed");
