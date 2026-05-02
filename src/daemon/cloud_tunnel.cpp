@@ -594,9 +594,34 @@ bool CloudTunnel::Connect(std::string* error) {
             if (error) *error = "SSL_CTX_new failed";
             return false;
         }
+        // Pin TLS 1.2 (both ends). Why not 1.3:
+        //   In TLS 1.3 the client is allowed to start sending application
+        //   data ("1-RTT early write") immediately after its Finished,
+        //   without waiting for the server to acknowledge. OpenSSL takes
+        //   advantage of this and packs Finished + the first SSL_write()
+        //   call into the same TLS record. Cloudflare's edge has been
+        //   observed to reset (TCP RST after a tiny encrypted alert) when
+        //   the very first byte of application data lands in that same
+        //   record on certain hostnames, even though the behaviour is
+        //   spec-compliant. Forcing TLS 1.2 here removes that window:
+        //   in 1.2 the client must wait for the server's CCS+Finished
+        //   before any application data, so the GET ... Upgrade reaches
+        //   CF in a clean record and the WebSocket handshake completes.
+        //
+        //   We still keep the 1.2 floor we already had, so older edge
+        //   middleboxes are also fine. If CF ever requires 1.3, revisit
+        //   by adding a manual post-handshake read or SSL_set_mode flag
+        //   that disables the coalescing.
         SSL_CTX_set_min_proto_version(ssl_ctx_, TLS1_2_VERSION);
+        SSL_CTX_set_max_proto_version(ssl_ctx_, TLS1_2_VERSION);
         SSL_CTX_set_default_verify_paths(ssl_ctx_);
         SSL_CTX_set_verify(ssl_ctx_, SSL_VERIFY_PEER, nullptr);
+        // Advertise ALPN "http/1.1" on the TLS ClientHello. CF and other
+        // edges sometimes treat a missing ALPN as a bot-like fingerprint;
+        // browsers + curl always send one. Pinning http/1.1 also keeps
+        // us off any future h2/h3 negotiation path we don't speak.
+        static const unsigned char kAlpnHttp11[] = {8, 'h','t','t','p','/','1','.','1'};
+        SSL_CTX_set_alpn_protos(ssl_ctx_, kAlpnHttp11, sizeof(kAlpnHttp11));
         ssl_ = SSL_new(ssl_ctx_);
         if (!ssl_) {
             Disconnect();
@@ -630,7 +655,12 @@ bool CloudTunnel::Connect(std::string* error) {
     const bool default_port = (url.tls && url.port == "443") ||
                                (!url.tls && url.port == "80");
     if (!default_port) request << ":" << url.port;
+    // User-Agent identifies us in cloud-side logs and avoids any edge
+    // network (Cloudflare bot fight mode etc.) that disfavours
+    // UA-less clients. Format follows the tenboxd/<version> convention
+    // used by host_updater's apt invocation.
     request << "\r\n"
+            << "User-Agent: tenboxd/" << TENBOX_VERSION << "\r\n"
             << "Upgrade: websocket\r\n"
             << "Connection: Upgrade\r\n"
             << "Sec-WebSocket-Version: 13\r\n"
