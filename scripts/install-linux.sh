@@ -66,7 +66,10 @@ check_platform() {
         *) die "unsupported distro: ${PRETTY_NAME:-unknown}; install manually" ;;
     esac
 
-    # arch must match a deb we publish.
+    # arch must match a deb we publish. Stash it in a global so
+    # check_kvm can branch on it (vmx/svm only exists on x86_64;
+    # ARMv8 exposes virtualization through EL2 instead and there is
+    # no equivalent flag in /proc/cpuinfo).
     arch="$(dpkg --print-architecture 2>/dev/null || true)"
     case "$arch" in
         amd64|arm64) ;;
@@ -97,10 +100,21 @@ check_platform() {
 
 check_kvm() {
     step "Checking KVM support..."
-    if ! grep -Eq '(vmx|svm)' /proc/cpuinfo 2>/dev/null; then
-        die "KVM unsupported: CPU virtualization flag vmx/svm was not found"
+    # On x86_64 the VT-x / AMD-V capability shows up in /proc/cpuinfo
+    # as the vmx (Intel) or svm (AMD) flag, and missing it is a hard
+    # failure that no amount of kernel module loading will fix.
+    #
+    # On ARMv8 there is no analogous flag: KVM relies on the CPU
+    # being able to enter EL2 (the hypervisor exception level),
+    # which is not advertised through /proc/cpuinfo. The only
+    # reliable signal there is whether the kernel actually exposes
+    # /dev/kvm, so we skip the cpuinfo grep on arm64.
+    if [ "$arch" = "amd64" ]; then
+        if ! grep -Eq '(vmx|svm)' /proc/cpuinfo 2>/dev/null; then
+            die "KVM unsupported: CPU virtualization flag vmx/svm was not found (enable VT-x/AMD-V in BIOS?)"
+        fi
     fi
-    [ -e /dev/kvm ] || die "KVM unsupported: /dev/kvm does not exist (load kvm_intel or kvm_amd)"
+    [ -e /dev/kvm ] || die "KVM unsupported: /dev/kvm does not exist (load kvm_intel/kvm_amd on x86, or boot a kernel with KVM enabled on arm64)"
     if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
         die "KVM unsupported: /dev/kvm is not r/w; check permissions"
     fi
@@ -110,16 +124,13 @@ apt_install_deps() {
     export DEBIAN_FRONTEND=noninteractive
     step "Refreshing apt package index..."
     apt-get update -y >/dev/null
-    step "Installing installer prerequisites (curl, gnupg, jq)..."
-    # Pre-reqs for this installer (curl/jq for talking to the apt repo
-    # metadata, gnupg for the future signed InRelease handover). The
-    # deb's own runtime deps (libc6 / libssl3{,t64} / qemu-system-*)
-    # are pulled in by the later `apt-get install tenbox` step.
-    apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        gnupg \
-        jq >/dev/null
+    step "Ensuring ca-certificates is installed..."
+    # Only ca-certificates is actually required here: apt itself
+    # talks to the HTTPS repo registered below, and the trust store
+    # has to be in place before that fetch runs. The deb's own
+    # runtime deps (libc6 / libssl3{,t64}) are pulled in by the
+    # later `apt-get install tenbox` step.
+    apt-get install -y --no-install-recommends ca-certificates >/dev/null
 }
 
 register_apt_repo() {
@@ -133,6 +144,24 @@ EOF
     apt-get update -y >/dev/null
 }
 
+# Print the tail of apt's term.log so the operator can see WHY the
+# install actually failed. We swallow apt's stdout/stderr above (to
+# keep the happy path quiet), so without this hook a dpkg error like
+# "unknown compression for member control.tar.zst" or a postinst
+# failure shows up only as a bare "Sub-process /usr/bin/dpkg returned
+# an error code (1)" — useless for triage.
+print_apt_failure_log() {
+    apt_log="/var/log/apt/term.log"
+    echo
+    echo "tenbox install: apt-get failed. last lines of $apt_log:" >&2
+    if [ -r "$apt_log" ]; then
+        tail -n 40 "$apt_log" >&2 || true
+    else
+        echo "  (log not readable; try: sudo tail -n 80 $apt_log)" >&2
+    fi
+    echo >&2
+}
+
 apt_install_tenbox() {
     export DEBIAN_FRONTEND=noninteractive
 
@@ -143,14 +172,19 @@ apt_install_tenbox() {
     # ca-certificates land via the deb's Depends).
     if [ "$release_tag" = "latest" ]; then
         step "Installing tenbox (latest)..."
-        apt-get install -y --no-install-recommends tenbox >/dev/null
+        if ! apt-get install -y --no-install-recommends tenbox >/dev/null; then
+            print_apt_failure_log
+            die "apt could not install tenbox (see log above)"
+        fi
     else
         # Strip the leading `v` so apt sees the bare version number.
         version="${release_tag#v}"
         step "Installing tenbox=$version..."
-        apt-get install -y --no-install-recommends \
-            "tenbox=$version" >/dev/null \
-            || die "apt could not install tenbox=$version (not in repo yet?)"
+        if ! apt-get install -y --no-install-recommends \
+                "tenbox=$version" >/dev/null; then
+            print_apt_failure_log
+            die "apt could not install tenbox=$version (not in repo yet?)"
+        fi
     fi
 }
 

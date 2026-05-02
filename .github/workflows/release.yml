@@ -115,6 +115,23 @@ jobs:
               "${{ matrix.arch }}" \
               "${{ steps.ver.outputs.version }}"
 
+      # Sanity-check the deb against Bullseye's dpkg (1.20). The runner
+      # is Ubuntu 22.04 with dpkg 1.21+, which can read both xz and zstd
+      # archives, so a deb that secretly slipped to zstd would still
+      # parse fine on the runner but blow up on a Debian 11 host with
+      # "unknown compression for member control.tar.zst". Running the
+      # validation inside debian:11 catches that regression here, not
+      # in users' install logs.
+      - name: Validate deb is installable on Bullseye
+        run: |
+          set -euo pipefail
+          deb="dist/tenbox_${{ steps.ver.outputs.version }}_${{ matrix.arch }}.deb"
+          docker run --rm --platform "linux/${{ matrix.arch }}" \
+              -v "${{ github.workspace }}:/src" \
+              -w /src \
+              debian:11-slim \
+              bash -c "set -e; dpkg-deb -I '$deb' >/dev/null && dpkg-deb -c '$deb' >/dev/null"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

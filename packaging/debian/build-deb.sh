@@ -93,13 +93,19 @@ if command -v ldd >/dev/null 2>&1; then
     fi
 fi
 
-# Build with xz compression by default; gzip is the fallback for older
-# dpkg toolchains. Keep root:root ownership inside the archive.
+# Build with xz compression. We MUST pass -Z explicitly: starting with
+# dpkg 1.21 (Debian 12 / Ubuntu 22.04+) dpkg-deb's default switched to
+# zstd, but Bullseye's dpkg 1.20 cannot read control.tar.zst and rejects
+# the package with "unknown compression for member control.tar.zst".
+# Since our supported floor is Debian 11 / Ubuntu 20.04 (see
+# scripts/install-linux.sh's glibc preflight), forcing xz here keeps
+# the single deb installable across the whole supported range.
+# Keep root:root ownership inside the archive.
 DIST_DIR="$REPO_ROOT/dist"
 mkdir -p "$DIST_DIR"
 DEB_OUT="$DIST_DIR/${PKG_NAME}.deb"
 
-dpkg-deb --root-owner-group --build "$DEB_ROOT" "$DEB_OUT"
+dpkg-deb -Z xz --root-owner-group --build "$DEB_ROOT" "$DEB_OUT"
 ( cd "$DIST_DIR" && sha256sum "$(basename "$DEB_OUT")" > "$(basename "$DEB_OUT").sha256" )
 
 echo "wrote $DEB_OUT"
