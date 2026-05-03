@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # TenBox one-line installer for Debian-derived systems.
 #
-#   curl -fsSL https://tenbox.ai/install.sh | sh
+#   curl -fsSL https://tenbox.ai/install.sh | sudo sh
 #
 # Responsibilities (in order):
 #  1. Validate platform (Debian-derivative + amd64/arm64 + glibc >= 2.35

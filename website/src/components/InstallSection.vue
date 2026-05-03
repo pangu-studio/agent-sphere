@@ -92,7 +92,7 @@ import { ref } from 'vue'
 const downloadUrlWin = __APP_DOWNLOAD_URL_WIN__
 const downloadUrlMac = __APP_DOWNLOAD_URL_MAC__
 
-const linuxCommand = 'curl -fsSL https://tenbox.ai/install.sh | sh'
+const linuxCommand = 'curl -fsSL https://tenbox.ai/install.sh | sudo sh'
 const copied = ref(false)
 
 let resetTimer = null

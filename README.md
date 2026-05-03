@@ -40,7 +40,7 @@ Under the hood, TenBox is a cross-platform Virtual Machine Monitor (VMM) with a 
 ### Linux (Debian 11+ / Ubuntu 20.04+ / Raspberry Pi OS 11+, amd64 / arm64)
 
 ```bash
-curl -fsSL https://tenbox.ai/install.sh | sh
+curl -fsSL https://tenbox.ai/install.sh | sudo sh
 ```
 
 Requires glibc 2.31+ and `/dev/kvm`. The installer registers the TenBox apt

@@ -6,10 +6,10 @@
 # changes -- only cut a new GitHub Release.
 #
 # Usage:
-#   curl -fsSL https://tenbox.ai/install.sh | sh
+#   curl -fsSL https://tenbox.ai/install.sh | sudo sh
 #
 # Pin to a specific release:
-#   curl -fsSL https://tenbox.ai/install.sh | TENBOX_RELEASE_TAG=v0.4.0 sh
+#   curl -fsSL https://tenbox.ai/install.sh | sudo TENBOX_RELEASE_TAG=v0.4.0 sh
 
 set -eu
 

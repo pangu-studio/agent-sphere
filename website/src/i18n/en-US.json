@@ -81,7 +81,7 @@
     "linux": {
       "title": "Linux",
       "desc": "Debian 11+ / Ubuntu 20.04+ / Raspberry Pi OS 11+ on amd64 / arm64 (validated on Raspberry Pi 5). Requires glibc 2.31+ and /dev/kvm.",
-      "command": "curl -fsSL https://tenbox.ai/install.sh | sh",
+      "command": "curl -fsSL https://tenbox.ai/install.sh | sudo sh",
       "footnote": "After install, a pairing URL is printed — open the",
       "footnote_link": "TenBox Cloud Console",
       "footnote_after": "to claim the host and manage it remotely.",
