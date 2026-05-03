@@ -1612,6 +1612,51 @@ std::shared_ptr<WebRtcPeer> CloudTunnel::CreateRemotePeer(
         // ship whatever candidates were collected within ~10s; on STUN-blocked
         // networks the answer sometimes returns with zero candidates and
         // the browser would have nothing to connect to.
+        // Tear the session down when the WebRTC link reaches a terminal
+        // state (libdatachannel reports Failed after its ~30s ICE consent
+        // timer, or Closed when the remote ends the DTLS association).
+        // Without this hook the daemon kept the `remote_peers_` entry
+        // alive forever after a network drop or a tab crash, so a fresh
+        // browser tab would always hit `remote_session_conflict` and the
+        // video pump kept burning CPU encoding for nobody.
+        //
+        // We MUST defer the actual cleanup off the libdatachannel worker
+        // thread: erasing remote_peers_[session_id] runs ~PeerConnection
+        // synchronously, and the callback we're standing in is invoked
+        // *from* that PeerConnection. Joining its own threads from
+        // inside its callback deadlocks. A detached worker keeps the
+        // peer alive until the callback returns, then performs the
+        // removal on a fresh stack.
+        peer->SetPeerClosedHandler([this, session_id, vm_id](std::string reason) {
+            std::fprintf(stdout,
+                         "[INFO]  cloud_tunnel: tearing down remote session %s on vm %s (reason=%s)\n",
+                         session_id.c_str(), vm_id.c_str(), reason.c_str());
+            std::fflush(stdout);
+            std::thread([this, session_id, vm_id, reason]() {
+                if (fd_ >= 0) {
+                    (void)SendJson({
+                        {"id", GenerateUuid()},
+                        {"type", "remote_session.closed"},
+                        {"host_id", host_id_},
+                        {"vm_id", vm_id},
+                        {"session_id", session_id},
+                        {"payload", {
+                            {"session_id", session_id},
+                            {"reason", reason},
+                            {"message", reason == "peer_failed"
+                                ? "remote desktop connection failed"
+                                : "remote desktop connection closed"},
+                        }},
+                    });
+                }
+                {
+                    std::lock_guard<std::mutex> lock(remote_peers_mu_);
+                    remote_peers_.erase(session_id);
+                }
+                runtime_manager_.ClearClipboardCallback(vm_id);
+                (void)remote_sessions_.Close(vm_id, session_id);
+            }).detach();
+        });
         peer->SetLocalIceCandidateHandler(
             [this, session_id, vm_id](nlohmann::json candidate) {
                 if (fd_ < 0) return;
@@ -1785,9 +1830,33 @@ nlohmann::json CloudTunnel::CreateRemoteSession(const std::string& vm_id, const 
     const bool force = payload.value("force", false);
     if (force) {
         if (auto existing = remote_sessions_.GetByVm(vm_id)) {
-            std::lock_guard<std::mutex> lock(remote_peers_mu_);
-            remote_peers_.erase(existing->session_id);
+            const std::string old_session_id = existing->session_id;
+            {
+                std::lock_guard<std::mutex> lock(remote_peers_mu_);
+                remote_peers_.erase(old_session_id);
+            }
             runtime_manager_.ClearClipboardCallback(vm_id);
+            // Notify the displaced viewer so it can tear down its
+            // RTCPeerConnection and surface a "session was taken over"
+            // banner instead of sitting on a frozen frame waiting for
+            // video that will never arrive. Without this push, the old
+            // browser's WS stays open, no business event fires, and the
+            // panel only ever sees an `iceConnectionState=disconnected`
+            // that the UI today silently swallows into the log.
+            if (fd_ >= 0) {
+                (void)SendJson({
+                    {"id", GenerateUuid()},
+                    {"type", "remote_session.closed"},
+                    {"host_id", host_id_},
+                    {"vm_id", vm_id},
+                    {"session_id", old_session_id},
+                    {"payload", {
+                        {"session_id", old_session_id},
+                        {"reason", "superseded"},
+                        {"message", "another viewer took over this session"},
+                    }},
+                });
+            }
         }
     }
     auto session = remote_sessions_.Create(vm_id, owner, force);

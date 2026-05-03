@@ -142,11 +142,40 @@ std::string StripLipSyncGroups(std::string sdp) {
 
 }  // namespace
 
+// Wire libdatachannel's internal logger into our stdout the first time
+// any peer is created. We only enable the chatty levels (Debug, Verbose)
+// when TENBOX_WEBRTC_VERBOSE is on; otherwise libdatachannel still
+// surfaces warnings/errors so juice STUN failures, ICE state machine
+// transitions, etc. show up in the daemon journal during connectivity
+// debugging without requiring a code change. Initialization is one-shot
+// and idempotent under std::call_once so we never re-register the sink.
+void EnsureLibDatachannelLoggerInstalled() {
+    static std::once_flag once;
+    std::call_once(once, []() {
+        const auto level = VerboseWebRtcLogging() ? rtc::LogLevel::Debug : rtc::LogLevel::Info;
+        rtc::InitLogger(level, [](rtc::LogLevel lvl, std::string message) {
+            const char* tag = "INFO ";
+            switch (lvl) {
+                case rtc::LogLevel::Fatal:   tag = "FATAL"; break;
+                case rtc::LogLevel::Error:   tag = "ERROR"; break;
+                case rtc::LogLevel::Warning: tag = "WARN "; break;
+                case rtc::LogLevel::Info:    tag = "INFO "; break;
+                case rtc::LogLevel::Debug:   tag = "DEBUG"; break;
+                case rtc::LogLevel::Verbose: tag = "TRACE"; break;
+                default: break;
+            }
+            std::fprintf(stdout, "[%s] libdatachannel: %s\n", tag, message.c_str());
+            std::fflush(stdout);
+        });
+    });
+}
+
 class NativeWebRtcPeer final : public WebRtcPeer {
 public:
     explicit NativeWebRtcPeer(RemoteFrameReader frame_reader, PixelFormat preferred_video_format)
         : frame_reader_(std::move(frame_reader)),
           preferred_video_format_(preferred_video_format) {
+        EnsureLibDatachannelLoggerInstalled();
         rtc::Configuration config;
         for (const auto& url : ConfiguredStunServers()) {
             try {
@@ -178,6 +207,36 @@ public:
                 StartVideoPump();
                 StartAudioPump();
             }
+            // Surface terminal transitions to the embedder so it can drop
+            // the per-session bookkeeping and tell the browser the
+            // desktop is gone. We deliberately ignore Disconnected
+            // because libdatachannel will either climb back to Connected
+            // or escalate to Failed on its own ICE consent timer; firing
+            // on Disconnected would tear sessions down for transient
+            // wifi blips. `peer_closed_dispatched_` keeps us idempotent
+            // because Failed -> Closed often fires both edges.
+            if (state == rtc::PeerConnection::State::Failed ||
+                state == rtc::PeerConnection::State::Closed) {
+                PeerClosedHandler handler;
+                {
+                    std::lock_guard<std::mutex> lock(mu_);
+                    if (peer_closed_dispatched_) return;
+                    peer_closed_dispatched_ = true;
+                    handler = peer_closed_handler_;
+                }
+                if (handler) {
+                    const std::string reason =
+                        state == rtc::PeerConnection::State::Failed ? "peer_failed" : "peer_closed";
+                    try {
+                        handler(reason);
+                    } catch (const std::exception& e) {
+                        std::fprintf(stdout,
+                                     "[ERROR] remote_webrtc: peer closed handler threw: %s\n",
+                                     e.what());
+                        std::fflush(stdout);
+                    }
+                }
+            }
         });
         peer_->onLocalDescription([this](rtc::Description description) {
             std::lock_guard<std::mutex> lock(mu_);
@@ -203,6 +262,16 @@ public:
             // initial answer's `candidates[]` (which we cap at a short
             // gathering window so STUN-blackholed networks don't stall
             // session creation).
+            //
+            // Trickle frames may legitimately reach the browser before
+            // the answer SDP - libdatachannel's worker can fire
+            // onLocalCandidate before our caller has had a chance to
+            // SendJson the answer envelope. That's the standard
+            // signaling race every WebRTC client is expected to
+            // handle by queueing addIceCandidate calls until
+            // setRemoteDescription resolves; the browser-side
+            // RemoteDesktopPanel does exactly that, so we fire as
+            // soon as we have a candidate.
             if (handler) {
                 try {
                     handler(std::move(entry));
@@ -363,6 +432,31 @@ public:
             } catch (const std::exception& e) {
                 std::fprintf(stdout,
                              "[ERROR] remote_webrtc: local ice handler threw on backlog: %s\n",
+                             e.what());
+                std::fflush(stdout);
+            }
+        }
+    }
+
+    void SetPeerClosedHandler(PeerClosedHandler handler) override {
+        // Replay an already-dispatched terminal state so a handler
+        // installed late (e.g. embedder swaps in its callback after
+        // the peer has already crashed during AcceptOffer) still gets
+        // a chance to clean up. The dispatched flag prevents
+        // double-invocation if the underlying state machine fires
+        // Failed -> Closed afterward.
+        bool replay = false;
+        {
+            std::lock_guard<std::mutex> lock(mu_);
+            peer_closed_handler_ = handler;
+            if (handler && peer_closed_dispatched_) replay = true;
+        }
+        if (replay && handler) {
+            try {
+                handler("peer_closed");
+            } catch (const std::exception& e) {
+                std::fprintf(stdout,
+                             "[ERROR] remote_webrtc: peer closed handler threw on replay: %s\n",
                              e.what());
                 std::fflush(stdout);
             }
@@ -1281,6 +1375,8 @@ private:
     DataChannelMessageHandler dc_handler_;
     DataChannelOpenHandler dc_open_handler_;
     LocalIceCandidateHandler local_ice_handler_;
+    PeerClosedHandler peer_closed_handler_;
+    bool peer_closed_dispatched_ = false;
     std::shared_ptr<rtc::Track> video_track_;
     std::shared_ptr<rtc::Track> audio_track_;
     std::thread video_thread_;

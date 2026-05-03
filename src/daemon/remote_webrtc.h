@@ -79,6 +79,14 @@ using DataChannelOpenHandler = std::function<void(const std::string& label)>;
 // AcceptOffer; deduplication is the embedder's responsibility.
 using LocalIceCandidateHandler = std::function<void(nlohmann::json candidate)>;
 
+// Fired when the underlying RTCPeerConnection enters a terminal state
+// (failed/closed). The embedder is expected to tear down the
+// remote-session bookkeeping (drop the peer entry, notify the cloud
+// signaling channel) so the browser is told the desktop is gone instead
+// of staring at a frozen frame. `reason` is a short tag suitable for
+// inclusion in a `remote_session.closed` payload, e.g. "peer_failed".
+using PeerClosedHandler = std::function<void(std::string reason)>;
+
 class WebRtcPeer {
 public:
     virtual ~WebRtcPeer() = default;
@@ -89,6 +97,7 @@ public:
     virtual void SetDataChannelHandler(DataChannelMessageHandler handler) = 0;
     virtual void SetDataChannelOpenHandler(DataChannelOpenHandler handler) = 0;
     virtual void SetLocalIceCandidateHandler(LocalIceCandidateHandler handler) = 0;
+    virtual void SetPeerClosedHandler(PeerClosedHandler handler) = 0;
     // Send a JSON text frame to a specific data channel (typically "control"
     // for clipboard / status events). Returns false if the channel doesn't
     // exist or isn't open yet; the caller is expected to drop the message.
