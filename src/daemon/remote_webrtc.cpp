@@ -304,7 +304,9 @@ void EnsureLibDatachannelLoggerInstalled() {
     });
 }
 
-class NativeWebRtcPeer final : public WebRtcPeer {
+class NativeWebRtcPeer final
+    : public WebRtcPeer,
+      public std::enable_shared_from_this<NativeWebRtcPeer> {
 public:
     explicit NativeWebRtcPeer(RemoteFrameReader frame_reader, PixelFormat preferred_video_format)
         : frame_reader_(std::move(frame_reader)),
@@ -333,124 +335,148 @@ public:
         }
         config.disableAutoNegotiation = true;
         peer_ = std::make_shared<rtc::PeerConnection>(std::move(config));
-        peer_->onStateChange([this](rtc::PeerConnection::State state) {
-            const int code = static_cast<int>(state);
-            // Connecting/connected fire on every session and reconnect; only
-            // the terminal-ish transitions (disconnected/failed/closed) are
-            // worth logging at INFO. The rest goes to verbose.
-            if (code >= 3) {
-                std::fprintf(stdout,
-                             "[INFO]  remote_webrtc: peer state %s\n",
-                             PeerStateName(code));
-                std::fflush(stdout);
-            } else {
-                VerboseLog("[INFO]  remote_webrtc: peer state %s\n",
-                           PeerStateName(code));
-            }
-            if (state == rtc::PeerConnection::State::Connected) {
-                StartVideoPump();
-                StartAudioPump();
-            }
-            // Surface terminal transitions to the embedder so it can drop
-            // the per-session bookkeeping and tell the browser the
-            // desktop is gone. We deliberately ignore Disconnected
-            // because libdatachannel will either climb back to Connected
-            // or escalate to Failed on its own ICE consent timer; firing
-            // on Disconnected would tear sessions down for transient
-            // wifi blips. `peer_closed_dispatched_` keeps us idempotent
-            // because Failed -> Closed often fires both edges.
-            if (state == rtc::PeerConnection::State::Failed ||
-                state == rtc::PeerConnection::State::Closed) {
-                PeerClosedHandler handler;
-                {
-                    std::lock_guard<std::mutex> lock(mu_);
-                    if (peer_closed_dispatched_) return;
-                    peer_closed_dispatched_ = true;
-                    handler = peer_closed_handler_;
-                }
-                if (handler) {
-                    const std::string reason =
-                        state == rtc::PeerConnection::State::Failed ? "peer_failed" : "peer_closed";
-                    try {
-                        handler(reason);
-                    } catch (const std::exception& e) {
-                        std::fprintf(stdout,
-                                     "[ERROR] remote_webrtc: peer closed handler threw: %s\n",
-                                     e.what());
-                        std::fflush(stdout);
-                    }
-                }
-            }
+    }
+
+    void InstallCallbacks() {
+        std::weak_ptr<NativeWebRtcPeer> weak = shared_from_this();
+        peer_->onStateChange([weak](rtc::PeerConnection::State state) {
+            if (auto self = weak.lock()) self->HandleStateChange(state);
         });
-        peer_->onLocalDescription([this](rtc::Description description) {
-            std::lock_guard<std::mutex> lock(mu_);
-            local_type_ = description.typeString();
-            local_sdp_ = StripLipSyncGroups(std::string(description));
-            description_ready_ = true;
-            cv_.notify_all();
+        peer_->onLocalDescription([weak](rtc::Description description) {
+            if (auto self = weak.lock()) self->HandleLocalDescription(std::move(description));
         });
-        peer_->onLocalCandidate([this](rtc::Candidate candidate) {
-            nlohmann::json entry = {
-                {"candidate", std::string(candidate)},
-                {"sdpMid", candidate.mid()},
-            };
-            LocalIceCandidateHandler handler;
+        peer_->onLocalCandidate([weak](rtc::Candidate candidate) {
+            if (auto self = weak.lock()) self->HandleLocalCandidate(std::move(candidate));
+        });
+        peer_->onGatheringStateChange([weak](rtc::PeerConnection::GatheringState state) {
+            if (auto self = weak.lock()) self->HandleGatheringStateChange(state);
+        });
+        peer_->onDataChannel([weak](std::shared_ptr<rtc::DataChannel> channel) {
+            if (auto self = weak.lock()) self->AttachDataChannel(std::move(channel));
+        });
+        peer_->onTrack([weak](std::shared_ptr<rtc::Track> track) {
+            if (auto self = weak.lock()) self->HandleTrack(std::move(track));
+        });
+    }
+
+    void HandleStateChange(rtc::PeerConnection::State state) {
+        const int code = static_cast<int>(state);
+        // Connecting/connected fire on every session and reconnect; only
+        // the terminal-ish transitions (disconnected/failed/closed) are
+        // worth logging at INFO. The rest goes to verbose.
+        if (code >= 3) {
+            std::fprintf(stdout,
+                         "[INFO]  remote_webrtc: peer state %s\n",
+                         PeerStateName(code));
+            std::fflush(stdout);
+        } else {
+            VerboseLog("[INFO]  remote_webrtc: peer state %s\n",
+                       PeerStateName(code));
+        }
+        if (state == rtc::PeerConnection::State::Connected) {
+            StartVideoPump();
+            StartAudioPump();
+        }
+        // Surface terminal transitions to the embedder so it can drop
+        // the per-session bookkeeping and tell the browser the
+        // desktop is gone. We deliberately ignore Disconnected
+        // because libdatachannel will either climb back to Connected
+        // or escalate to Failed on its own ICE consent timer; firing
+        // on Disconnected would tear sessions down for transient
+        // wifi blips. `peer_closed_dispatched_` keeps us idempotent
+        // because Failed -> Closed often fires both edges.
+        if (state == rtc::PeerConnection::State::Failed ||
+            state == rtc::PeerConnection::State::Closed) {
+            PeerClosedHandler handler;
             {
                 std::lock_guard<std::mutex> lock(mu_);
-                candidates_.push_back(entry);
-                handler = local_ice_handler_;
+                if (peer_closed_dispatched_) return;
+                peer_closed_dispatched_ = true;
+                handler = peer_closed_handler_;
             }
-            // Trickle every host-side candidate to the embedder so the
-            // browser can start probing as soon as gathering produces
-            // host / srflx entries, instead of having to wait for the
-            // initial answer's `candidates[]` (which we cap at a short
-            // gathering window so STUN-blackholed networks don't stall
-            // session creation).
-            //
-            // Trickle frames may legitimately reach the browser before
-            // the answer SDP - libdatachannel's worker can fire
-            // onLocalCandidate before our caller has had a chance to
-            // SendJson the answer envelope. That's the standard
-            // signaling race every WebRTC client is expected to
-            // handle by queueing addIceCandidate calls until
-            // setRemoteDescription resolves; the browser-side
-            // RemoteDesktopPanel does exactly that, so we fire as
-            // soon as we have a candidate.
             if (handler) {
+                const std::string reason =
+                    state == rtc::PeerConnection::State::Failed ? "peer_failed" : "peer_closed";
                 try {
-                    handler(std::move(entry));
+                    handler(reason);
                 } catch (const std::exception& e) {
                     std::fprintf(stdout,
-                                 "[ERROR] remote_webrtc: local ice handler threw: %s\n",
+                                 "[ERROR] remote_webrtc: peer closed handler threw: %s\n",
                                  e.what());
                     std::fflush(stdout);
                 }
             }
-        });
-        peer_->onGatheringStateChange([this](rtc::PeerConnection::GatheringState state) {
-            if (state == rtc::PeerConnection::GatheringState::Complete) {
-                std::lock_guard<std::mutex> lock(mu_);
-                gathering_complete_ = true;
-                cv_.notify_all();
+        }
+    }
+
+    void HandleLocalDescription(rtc::Description description) {
+        std::lock_guard<std::mutex> lock(mu_);
+        local_type_ = description.typeString();
+        local_sdp_ = StripLipSyncGroups(std::string(description));
+        description_ready_ = true;
+        cv_.notify_all();
+    }
+
+    void HandleLocalCandidate(rtc::Candidate candidate) {
+        nlohmann::json entry = {
+            {"candidate", std::string(candidate)},
+            {"sdpMid", candidate.mid()},
+        };
+        LocalIceCandidateHandler handler;
+        {
+            std::lock_guard<std::mutex> lock(mu_);
+            candidates_.push_back(entry);
+            handler = local_ice_handler_;
+        }
+        // Trickle every host-side candidate to the embedder so the
+        // browser can start probing as soon as gathering produces
+        // host / srflx entries, instead of having to wait for the
+        // initial answer's `candidates[]` (which we cap at a short
+        // gathering window so STUN-blackholed networks don't stall
+        // session creation).
+        //
+        // Trickle frames may legitimately reach the browser before
+        // the answer SDP - libdatachannel's worker can fire
+        // onLocalCandidate before our caller has had a chance to
+        // SendJson the answer envelope. That's the standard
+        // signaling race every WebRTC client is expected to
+        // handle by queueing addIceCandidate calls until
+        // setRemoteDescription resolves; the browser-side
+        // RemoteDesktopPanel does exactly that, so we fire as
+        // soon as we have a candidate.
+        if (handler) {
+            try {
+                handler(std::move(entry));
+            } catch (const std::exception& e) {
+                std::fprintf(stdout,
+                             "[ERROR] remote_webrtc: local ice handler threw: %s\n",
+                             e.what());
+                std::fflush(stdout);
             }
-        });
-        peer_->onDataChannel([this](std::shared_ptr<rtc::DataChannel> channel) {
-            AttachDataChannel(std::move(channel));
-        });
-        peer_->onTrack([this](std::shared_ptr<rtc::Track> track) {
-            if (!track) return;
-            const auto description = track->description();
-            VerboseLog("[INFO]  remote_webrtc: negotiated track type=%s mid=%s\n",
-                       description.type().c_str(),
-                       description.mid().c_str());
-            if (description.type() == "video") {
-                ConfigureVideoTrack(std::move(track));
-            } else if (description.type() == "audio") {
-                ConfigureAudioTrack(std::move(track));
-            } else {
-                track->close();
-            }
-        });
+        }
+    }
+
+    void HandleGatheringStateChange(rtc::PeerConnection::GatheringState state) {
+        if (state == rtc::PeerConnection::GatheringState::Complete) {
+            std::lock_guard<std::mutex> lock(mu_);
+            gathering_complete_ = true;
+            cv_.notify_all();
+        }
+    }
+
+    void HandleTrack(std::shared_ptr<rtc::Track> track) {
+        if (!track) return;
+        const auto description = track->description();
+        VerboseLog("[INFO]  remote_webrtc: negotiated track type=%s mid=%s\n",
+                   description.type().c_str(),
+                   description.mid().c_str());
+        if (description.type() == "video") {
+            ConfigureVideoTrack(std::move(track));
+        } else if (description.type() == "audio") {
+            ConfigureAudioTrack(std::move(track));
+        } else {
+            track->close();
+        }
     }
 
     ~NativeWebRtcPeer() override {
@@ -669,22 +695,27 @@ private:
         // every session, so this is 4 lines per reconnect — verbose only.
         VerboseLog("[INFO]  remote_webrtc: data channel attached label=%s\n",
                    label.c_str());
-        std::weak_ptr<rtc::DataChannel> weak = channel;
+        std::weak_ptr<NativeWebRtcPeer> self_weak = weak_from_this();
+        std::weak_ptr<rtc::DataChannel> channel_weak = channel;
         channel->onMessage(
-            [this, weak, label](rtc::binary /*data*/) {
+            [self_weak, channel_weak, label](rtc::binary /*data*/) {
+                if (!self_weak.lock() || channel_weak.expired()) return;
                 std::fprintf(stdout,
                              "[WARN]  remote_webrtc: dropping binary frame on dc=%s "
                              "(only JSON text messages are supported)\n",
                              label.c_str());
                 std::fflush(stdout);
             },
-            [this, label](std::string text) {
-                DispatchDataChannelText(label, std::move(text));
+            [self_weak, label](std::string text) {
+                if (auto self = self_weak.lock()) {
+                    self->DispatchDataChannelText(label, std::move(text));
+                }
             });
-        channel->onOpen([this, label] {
-            DispatchDataChannelOpen(label);
+        channel->onOpen([self_weak, label] {
+            if (auto self = self_weak.lock()) self->DispatchDataChannelOpen(label);
         });
-        channel->onClosed([this, label] {
+        channel->onClosed([self_weak, label] {
+            if (!self_weak.lock()) return;
             VerboseLog("[INFO]  remote_webrtc: data channel closed label=%s\n",
                        label.c_str());
         });
@@ -874,8 +905,11 @@ private:
         // estimation via LSR/DLSR is gone for video; ICE candidate-pair RTT
         // (browser getStats) is unaffected.
         packetizer->addToChain(std::make_shared<rtc::RtcpNackResponder>());
-        packetizer->addToChain(std::make_shared<rtc::PliHandler>([this]() {
-            force_keyframe_requested_ = true;
+        std::weak_ptr<NativeWebRtcPeer> weak = weak_from_this();
+        packetizer->addToChain(std::make_shared<rtc::PliHandler>([weak]() {
+            auto self = weak.lock();
+            if (!self) return;
+            self->force_keyframe_requested_ = true;
             // Receivers fire PLI on every key frame loss / freeze recovery,
             // sometimes several times per second. Default to verbose; even
             // verbose users get rate-limited info aggregated below by the
@@ -888,9 +922,11 @@ private:
                    video_track_->mid().c_str(),
                    color_space_id,
                    playout_delay_id);
-        video_track_->onOpen([this]() {
+        video_track_->onOpen([weak]() {
+            auto self = weak.lock();
+            if (!self) return;
             VerboseLog("[INFO]  remote_webrtc: video track opened\n");
-            StartVideoPump();
+            self->StartVideoPump();
         });
     }
 
@@ -909,9 +945,12 @@ private:
         VerboseLog("[INFO]  remote_webrtc: audio payload type=%u mid=%s\n",
                    payload_type,
                    audio_track_->mid().c_str());
-        audio_track_->onOpen([this]() {
+        std::weak_ptr<NativeWebRtcPeer> weak = weak_from_this();
+        audio_track_->onOpen([weak]() {
+            auto self = weak.lock();
+            if (!self) return;
             VerboseLog("[INFO]  remote_webrtc: audio track opened\n");
-            StartAudioPump();
+            self->StartAudioPump();
         });
     }
 
@@ -1546,9 +1585,11 @@ private:
 std::shared_ptr<WebRtcPeer> CreateWebRtcPeer(
     RemoteFrameReader frame_reader,
     PixelFormat preferred_video_format) {
-    return std::make_shared<NativeWebRtcPeer>(
+    auto peer = std::make_shared<NativeWebRtcPeer>(
         std::move(frame_reader),
         preferred_video_format);
+    peer->InstallCallbacks();
+    return peer;
 }
 
 bool NativeWebRtcAvailable() {
