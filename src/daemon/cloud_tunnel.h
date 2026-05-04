@@ -73,6 +73,9 @@ private:
                                     const nlohmann::json& payload);
     nlohmann::json HostResourcesPayload() const;
     nlohmann::json VmResourcesSnapshot() const;
+    void PushVmCreated(const VmRecord& record);
+    void PushVmEdited(const VmRecord& record);
+    void PushVmDeleted(const std::string& vm_id);
     void PushVmStateChanged(const std::string& vm_id, const VmRuntimeInfo& info);
     void PushImageCachedAdded(const std::string& cache_id, const std::string& image_name);
     void PushImageCachedRemoved(const std::string& cache_id);
@@ -126,6 +129,12 @@ private:
     // window lands on the wire as a bogus "Application Data" record that
     // Cloudflare answers with a fatal `unexpected_message` alert.
     std::atomic<bool> connected_{false};
+
+    // VM list+watch subscription state. `current_sub_id_` is 0 when there is
+    // no active subscription (daemon won't push vm.* delta events).  Set by the
+    // vm.subscribe RPC handler AFTER the snapshot response is sent so deltas
+    // are never delivered before the snapshot.  Reset to 0 in Disconnect().
+    // `current_seq_` is reset to 0 on each new subscription and pre-incremented
     std::mutex send_mu_;
     std::string host_id_;
     // Pairing state: when device.token exists on disk we reconnect with the

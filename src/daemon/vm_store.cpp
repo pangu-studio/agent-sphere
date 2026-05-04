@@ -69,6 +69,21 @@ void ReadRuntimeStateFile(const fs::path& vm_dir, VmRuntimeInfo& info) {
 
 VmStore::VmStore(std::string data_dir) : data_dir_(std::move(data_dir)) {}
 
+void VmStore::SetVmCreatedCallback(VmCreatedCallback callback) {
+    std::lock_guard<std::mutex> lock(callback_mutex_);
+    vm_created_callback_ = std::move(callback);
+}
+
+void VmStore::SetVmUpdatedCallback(VmUpdatedCallback callback) {
+    std::lock_guard<std::mutex> lock(callback_mutex_);
+    vm_updated_callback_ = std::move(callback);
+}
+
+void VmStore::SetVmRemovedCallback(VmRemovedCallback callback) {
+    std::lock_guard<std::mutex> lock(callback_mutex_);
+    vm_removed_callback_ = std::move(callback);
+}
+
 fs::path VmStore::VmRoot() const {
     return fs::path(data_dir_) / "vms";
 }
@@ -194,41 +209,81 @@ std::optional<VmRecord> VmStore::Get(const std::string& vm_id) const {
 
 bool VmStore::Create(const VmSpec& spec, VmRecord* created, std::string* error) {
     if (!SaveVm(spec, error)) return false;
-    std::lock_guard<std::mutex> lock(mutex_);
     VmRecord record{.spec = spec};
-    vms_.push_back(record);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        vms_.push_back(record);
+    }
     if (created) *created = record;
+    // Fire callback outside the store mutex so subscribers can safely call
+    // back into VmStore (e.g. via List()) without deadlocking.
+    VmCreatedCallback cb;
+    {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        cb = vm_created_callback_;
+    }
+    if (cb) cb(record);
     return true;
 }
 
 bool VmStore::UpdateSpec(const std::string& vm_id, const VmSpec& spec, std::string* error) {
     if (!SaveVm(spec, error)) return false;
-    std::lock_guard<std::mutex> lock(mutex_);
-    for (auto& vm : vms_) {
-        if (vm.spec.vm_id == vm_id) {
-            vm.spec = spec;
-            return true;
+    VmRecord updated_record;
+    bool found = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (auto& vm : vms_) {
+            if (vm.spec.vm_id == vm_id) {
+                vm.spec = spec;
+                updated_record = vm;
+                found = true;
+                break;
+            }
         }
     }
-    if (error) *error = "VM not found";
-    return false;
+    if (!found) {
+        if (error) *error = "VM not found";
+        return false;
+    }
+    VmUpdatedCallback cb;
+    {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        cb = vm_updated_callback_;
+    }
+    if (cb) cb(updated_record);
+    return true;
 }
 
 bool VmStore::Remove(const std::string& vm_id, std::string* error) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    for (auto it = vms_.begin(); it != vms_.end(); ++it) {
-        if (it->spec.vm_id != vm_id) continue;
-        std::error_code ec;
-        fs::remove_all(it->spec.vm_dir, ec);
-        if (ec) {
-            if (error) *error = "failed to delete VM directory: " + ec.message();
-            return false;
+    bool removed = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (auto it = vms_.begin(); it != vms_.end(); ++it) {
+            if (it->spec.vm_id != vm_id) continue;
+            std::error_code ec;
+            fs::remove_all(it->spec.vm_dir, ec);
+            if (ec) {
+                if (error) *error = "failed to delete VM directory: " + ec.message();
+                return false;
+            }
+            vms_.erase(it);
+            removed = true;
+            break;
         }
-        vms_.erase(it);
-        return true;
     }
-    if (error) *error = "VM not found";
-    return false;
+    if (!removed) {
+        if (error) *error = "VM not found";
+        return false;
+    }
+    // Fire callback outside the store mutex so subscribers can safely call
+    // back into VmStore without deadlocking.
+    VmRemovedCallback cb;
+    {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        cb = vm_removed_callback_;
+    }
+    if (cb) cb(vm_id);
+    return true;
 }
 
 bool VmStore::UpdateRuntime(const std::string& vm_id, const VmRuntimeInfo& runtime) {

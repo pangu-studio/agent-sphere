@@ -435,6 +435,17 @@ CloudTunnel::CloudTunnel(DaemonConfig config, VmStore& store, RuntimeManager& ru
         [this](const std::string& vm_id, const VmRuntimeInfo& info) {
             PushVmStateChanged(vm_id, info);
         });
+    // VM lifecycle callbacks from VmStore so every source of create/edit/delete
+    // (cloud RPC, IPC, CLI) triggers a push when a subscription is active.
+    store_.SetVmCreatedCallback([this](const VmRecord& record) {
+        PushVmCreated(record);
+    });
+    store_.SetVmUpdatedCallback([this](const VmRecord& record) {
+        PushVmEdited(record);
+    });
+    store_.SetVmRemovedCallback([this](const std::string& vm_id) {
+        PushVmDeleted(vm_id);
+    });
     runtime_manager_.SetLogAppendCallback(
         [this](const std::string& vm_id, const std::vector<std::string>& lines) {
             EnqueueLogLines(vm_id, lines);
@@ -1008,15 +1019,33 @@ const nlohmann::json& EncoderCapabilitiesCached() {
 }  // namespace
 
 nlohmann::json CloudTunnel::HostResourcesPayload() const {
-    // Sum running tenbox VM RSS. Walking `store_.List()` here is cheap (small
-    // number of VMs) and avoids a second source of truth for which VMs are
-    // running. We deliberately only count `kRunning`: starting/stopping
-    // states have unstable pids that the sampler may not have yet.
+    // Sum running tenbox VM RSS and build a vm_summary for cloud-side
+    // consistency checks (the cloud compares summary counts against its
+    // host_vms table and re-subscribes if they diverge).
     uint64_t vm_rss = 0;
+    uint32_t vm_total = 0, vm_running = 0, vm_starting = 0, vm_stopped = 0, vm_failed = 0;
     for (const auto& vm : store_.List()) {
-        if (vm.runtime.state != VmState::kRunning || vm.runtime.pid <= 0) continue;
-        const auto sample = runtime_manager_.SampleProcessResources(vm.spec.vm_id);
-        vm_rss += sample.rss_bytes;
+        vm_total++;
+        switch (vm.runtime.state) {
+            case VmState::kRunning:
+                if (vm.runtime.pid > 0) {
+                    const auto sample = runtime_manager_.SampleProcessResources(vm.spec.vm_id);
+                    vm_rss += sample.rss_bytes;
+                }
+                vm_running++;
+                break;
+            case VmState::kStarting:
+            case VmState::kStopping:
+            case VmState::kRebooting:
+                vm_starting++;
+                break;
+            case VmState::kCrashed:
+                vm_failed++;
+                break;
+            case VmState::kStopped:
+                vm_stopped++;
+                break;
+        }
     }
     const std::string images_dir = ImagesDir(config_);
     const uint16_t llm_port = llm_proxy_ ? llm_proxy_->port() : 0;
@@ -1042,6 +1071,16 @@ nlohmann::json CloudTunnel::HostResourcesPayload() const {
         {"os_release", host_updater::ReadOsRelease()},
         {"arch", host_updater::BuildArch()},
         {"glibc_version", host_updater::RuntimeGlibcVersion()},
+        // Checksum for cloud-side consistency verification. The cloud compares
+        // these counts against its host_vms table on every tick; a mismatch
+        // triggers a vm.subscribe to re-sync the authoritative state.
+        {"vm_summary", {
+            {"total",    vm_total},
+            {"running",  vm_running},
+            {"starting", vm_starting},
+            {"stopped",  vm_stopped},
+            {"failed",   vm_failed},
+        }},
     };
 }
 
@@ -2195,15 +2234,48 @@ nlohmann::json CloudTunnel::VmResourcesSnapshot() const {
     return vms;
 }
 
+void CloudTunnel::PushVmCreated(const VmRecord& record) {
+    if (fd_ < 0) return;
+    (void)SendJson({
+        {"id",      GenerateUuid()},
+        {"type",    "vm.created"},
+        {"host_id", host_id_},
+        {"vm_id",   record.spec.vm_id},
+        {"payload", ToJson(record)},
+    });
+}
+
+void CloudTunnel::PushVmEdited(const VmRecord& record) {
+    if (fd_ < 0) return;
+    (void)SendJson({
+        {"id",      GenerateUuid()},
+        {"type",    "vm.edited"},
+        {"host_id", host_id_},
+        {"vm_id",   record.spec.vm_id},
+        {"payload", ToJson(record)},
+    });
+}
+
+void CloudTunnel::PushVmDeleted(const std::string& vm_id) {
+    if (fd_ < 0) return;
+    (void)SendJson({
+        {"id",      GenerateUuid()},
+        {"type",    "vm.deleted"},
+        {"host_id", host_id_},
+        {"vm_id",   vm_id},
+        {"payload", {{"vm_id", vm_id}}},
+    });
+}
+
 void CloudTunnel::PushVmStateChanged(const std::string& vm_id, const VmRuntimeInfo& info) {
     if (fd_ < 0) return;
     (void)SendJson({
-        {"id", GenerateUuid()},
-        {"type", "vm.state_changed"},
+        {"id",      GenerateUuid()},
+        {"type",    "vm.state_changed"},
         {"host_id", host_id_},
-        {"vm_id", vm_id},
+        {"vm_id",   vm_id},
         {"payload", {
-            {"vm_id", vm_id},
+            {"vm_id",   vm_id},
             {"runtime", ToJson(info)},
         }},
     });

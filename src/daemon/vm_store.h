@@ -3,6 +3,7 @@
 #include "daemon/daemon_types.h"
 
 #include <filesystem>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -29,12 +30,28 @@ public:
     std::filesystem::path VmRoot() const;
     const std::string& data_dir() const { return data_dir_; }
 
+    // VM lifecycle callbacks. Fired after the operation succeeds, outside of
+    // the store's internal mutex.  Subscribers (e.g. CloudTunnel) use these
+    // to push vm.created / vm.edited / vm.deleted events regardless of whether
+    // the change came from a cloud RPC, an IPC call, or the local CLI.
+    using VmCreatedCallback = std::function<void(const VmRecord&)>;
+    using VmUpdatedCallback = std::function<void(const VmRecord&)>;
+    using VmRemovedCallback = std::function<void(const std::string& vm_id)>;
+    void SetVmCreatedCallback(VmCreatedCallback callback);
+    void SetVmUpdatedCallback(VmUpdatedCallback callback);
+    void SetVmRemovedCallback(VmRemovedCallback callback);
+
 private:
     bool LoadVmDir(const std::filesystem::path& vm_dir, std::string* error);
 
     std::string data_dir_;
     mutable std::mutex mutex_;
     std::vector<VmRecord> vms_;
+
+    mutable std::mutex callback_mutex_;
+    VmCreatedCallback vm_created_callback_;
+    VmUpdatedCallback vm_updated_callback_;
+    VmRemovedCallback vm_removed_callback_;
 };
 
 }  // namespace tenbox::daemon
