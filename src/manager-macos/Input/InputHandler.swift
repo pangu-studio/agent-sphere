@@ -82,13 +82,20 @@ class InputHandler {
 
     func handleFlagsChanged(keyCode: UInt16, modifierFlags flags: NSEvent.ModifierFlags) {
         guard let evdev = macKeyCodeToEvdev(keyCode) else { return }
+        if keyCode == Self.capsLockKeyCode {
+            activeModifierKeys.remove(keyCode)
+            pressedKeyCodes.remove(evdev)
+            onKeyEvent?(evdev, true)
+            onKeyEvent?(evdev, false)
+            return
+        }
+
         let pressed: Bool
         switch keyCode {
         case 0x38, 0x3C: pressed = flags.contains(.shift)
         case 0x3B, 0x3E: pressed = flags.contains(.control)
         case 0x3A, 0x3D: pressed = flags.contains(.option)
         case 0x37, 0x36: pressed = flags.contains(.command)
-        case 0x39:       pressed = flags.contains(.capsLock)
         default:         pressed = !activeModifierKeys.contains(keyCode)
         }
         if pressed {
@@ -120,6 +127,8 @@ class InputHandler {
     private func macKeyCodeToEvdev(_ keyCode: UInt16) -> UInt16? {
         return Self.keyMap[keyCode]
     }
+
+    private static let capsLockKeyCode: UInt16 = 0x39
 
     private static let keyMap: [UInt16: UInt16] = [
         0x12: 2,    // KEY_1
