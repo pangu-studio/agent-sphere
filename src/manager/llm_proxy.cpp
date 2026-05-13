@@ -624,17 +624,30 @@ bool LlmProxyService::ForwardToUpstream(uintptr_t client_sock,
             bool client_broke = false;
             uint32_t client_err = 0;
 
-            while ((read_result = WinHttpReadData(req, buf, kReadBufSize, &bytes_read)) && bytes_read > 0) {
+            // WinHttpReadData alone buffers internally and won't return
+            // until ~8 KB accumulates or the connection closes — killing
+            // real-time SSE forwarding.  Pair with WinHttpQueryDataAvailable
+            // which blocks only until *some* decrypted data is ready, then
+            // read exactly that amount so each SSE event is forwarded
+            // immediately.
+            DWORD avail = 0;
+            BOOL query_ok = TRUE;
+            while ((query_ok = WinHttpQueryDataAvailable(req, &avail))) {
+                if (avail == 0) break; // upstream finished gracefully
+                DWORD to_read = (avail < kReadBufSize) ? avail : kReadBufSize;
+                bytes_read = 0;
+                read_result = WinHttpReadData(req, buf, to_read, &bytes_read);
+                if (!read_result || bytes_read == 0) break;
+
                 sse_raw.append(buf, bytes_read);
                 bytes_total += bytes_read;
                 ++chunk_count;
                 last_chunk_ms = NowMonotonicMs();
 
-                // Cheap scan for [DONE] marker so we can tell "upstream finished
-                // gracefully" from "upstream hung up mid-stream".
                 if (!saw_done && std::string_view(buf, bytes_read).find("[DONE]") != std::string_view::npos)
                     saw_done = true;
 
+                OutputDebugStringA(std::string(buf, bytes_read).c_str());
                 std::string chunk_header = ToHex(bytes_read) + "\r\n";
                 if (!SendStr(client, chunk_header) ||
                     !SendAll(client, buf, static_cast<int>(bytes_read)) ||
@@ -643,8 +656,8 @@ bool LlmProxyService::ForwardToUpstream(uintptr_t client_sock,
                     client_err = static_cast<uint32_t>(WSAGetLastError());
                     break;
                 }
-                bytes_read = 0;
             }
+            if (!query_ok) read_result = FALSE;
             DWORD last_err = read_result ? 0 : GetLastError();
             uint64_t elapsed_ms = NowMonotonicMs() - t_start;
             uint64_t gap_ms = NowMonotonicMs() - last_chunk_ms;

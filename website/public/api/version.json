@@ -1,17 +1,17 @@
 {
-  "latest_version": "0.8.0",
+  "latest_version": "0.8.1",
   "min_supported_version": "0.1.0",
-  "release_notes": "- 修复若干bug\n- 重要‼ 0.5.7 之前版本，请在升级前确保已备份虚拟机内的重要数据",
-  "release_date": "2026-05-08",
-  "download_url": "https://files.xiaozhi.me/tenbox/releases/TenBox_0.8.0.msi",
-  "sha256": "1ba540ef76cd32858f3dc0dfef550cd2e0949dbe0600318f4984859bb5613c40",
+  "release_notes": "- 修复 LLM Proxy 在工具调用时超时问题\n- 重要‼ 0.5.7 之前版本，请在升级前确保已备份虚拟机内的重要数据",
+  "release_date": "2026-05-14",
+  "download_url": "https://files.xiaozhi.me/tenbox/releases/TenBox_0.8.1.msi",
+  "sha256": "d91152964cad1708b11230623c49539edd3227e61ab4224b3f53bb03015009dc",
   "platforms": {
     "windows": {
-      "latest_version": "0.8.0",
-      "release_notes": "- 修复若干bug\n- 重要‼ 0.5.7 之前版本，请在升级前确保已备份虚拟机内的重要数据",
-      "release_date": "2026-05-08",
-      "download_url": "https://files.xiaozhi.me/tenbox/releases/TenBox_0.8.0.msi",
-      "sha256": "1ba540ef76cd32858f3dc0dfef550cd2e0949dbe0600318f4984859bb5613c40",
+      "latest_version": "0.8.1",
+      "release_notes": "- 修复 LLM Proxy 在工具调用时超时问题\n- 重要‼ 0.5.7 之前版本，请在升级前确保已备份虚拟机内的重要数据",
+      "release_date": "2026-05-14",
+      "download_url": "https://files.xiaozhi.me/tenbox/releases/TenBox_0.8.1.msi",
+      "sha256": "d91152964cad1708b11230623c49539edd3227e61ab4224b3f53bb03015009dc",
       "size": 3280896,
       "min_os": "Windows 10"
     },
