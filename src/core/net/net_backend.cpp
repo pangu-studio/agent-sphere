@@ -23,7 +23,22 @@ extern "C" {
 
 #ifdef _WIN32
 #include <icmpapi.h>
+#else
+#include <sys/ioctl.h>
 #endif
+
+// Bytes currently readable on a socket (0 on error), used to tell a genuinely
+// idle connection apart from one whose poll was lost from the epoll set.
+static int SocketReadableBytes(SocketHandle s) {
+#ifdef _WIN32
+    u_long n = 0;
+    return (ioctlsocket(s, FIONREAD, &n) == 0) ? static_cast<int>(n) : 0;
+#else
+    int n = 0;
+    return (ioctl(s, FIONREAD, &n) == 0) ? n : 0;
+#endif
+}
+
 
 // ============================================================
 // Monotonic time (milliseconds)
@@ -267,21 +282,44 @@ void NetBackend::OnLwipTimer(uv_timer_t* handle) {
 
 void NetBackend::FlushStalledGuestWrites() {
     // While there are active TCP pcbs, lwIP keeps this timer scheduled at the
-    // TCP coarse interval (~250ms). The common case is handled instantly by
-    // tcp_sent; this fallback only retries guest-bound bytes that read
-    // back-pressure parked when a transient lwIP tcp_write failure (e.g.
-    // ERR_MEM) left pending_to_guest non-empty with no in-flight segment to
-    // trigger tcp_sent.
+    // TCP coarse interval (~250ms), so a parked stream resumes promptly. The
+    // common case is handled instantly by tcp_sent; this is only the fallback.
+    uint64_t now = GetMonotonicMs();
     for (auto& e : nat_entries_) {
         if (e->proto != IPPROTO_TCP) continue;
         if (e->host_socket == static_cast<uintptr_t>(SOCK_INVALID)) continue;
         if (e->poll.closing()) continue;
         if (e->state == NatState::Closed || e->state == NatState::Listening)
             continue;
-        if (e->pending_to_guest.empty() || !e->conn_pcb) continue;
 
-        DrainTcpToGuest(e.get());
-        if (e->pending_to_guest.empty()) UpdateNatPoll(e.get());
+        // Flush any guest-bound bytes that read back-pressure parked but
+        // tcp_sent never re-armed (e.g. a transient lwIP write failure).
+        if (!e->pending_to_guest.empty() && e->conn_pcb) {
+            DrainTcpToGuest(e.get());
+            if (e->pending_to_guest.empty()) UpdateNatPoll(e.get());
+            continue;
+        }
+        if (!e->pending_to_guest.empty()) continue;  // still window-blocked
+
+        // Precise wedged-relay detector: the host socket has unread bytes yet
+        // the entry has made no progress for a while. That means libuv is no
+        // longer delivering readable events for this fd — its poll was lost
+        // from the epoll set (active_ left stale by an fd-number reuse where a
+        // sibling handle's teardown issued EPOLL_CTL_DEL on the reused fd).
+        // Re-register the poll to put the fd back in the set; the next loop
+        // iteration then reads the response. A genuinely idle connection has
+        // 0 readable bytes, so it is never touched (no churn, no log spam).
+        if ((now - e->last_active_ms) > 1000 &&
+            SocketReadableBytes(static_cast<SocketHandle>(e->host_socket)) > 0) {
+            LOG_WARN("nat wedged relay re-armed: state=%d active=%d fd=%ld "
+                     "idle_ms=%llu proxy_port=%u",
+                     (int)e->state, (int)e->poll.active(),
+                     (long)e->host_socket,
+                     (unsigned long long)(now - e->last_active_ms),
+                     (unsigned)e->proxy_port);
+            e->poll.Stop();
+            UpdateNatPoll(e.get());
+        }
     }
     for (auto& pf : host_forwards_) {
         for (auto& c : pf.conns) {
