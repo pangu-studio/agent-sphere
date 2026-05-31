@@ -4,6 +4,7 @@
 #include "core/net/net_backend.h"
 #include "core/net/net_packet.h"
 #include "core/net/frame_builder.h"
+#include "core/vmm/types.h"
 
 extern "C" {
 #include "lwip/tcp.h"
@@ -329,11 +330,30 @@ void NetBackend::ReverseRewrite(uint8_t* frame, uint32_t len) {
 
 void NetBackend::OnTcpAccepted(NatEntry* entry, void* new_pcb_v) {
     auto* new_pcb = static_cast<struct tcp_pcb*>(new_pcb_v);
+
+    // Reject a second accept on the same NAT entry. Each entry maps one guest
+    // TCP flow to one host socket; a duplicate accept (a straggling SYN
+    // handled before the deferred listener close runs) would otherwise
+    // overwrite conn_pcb/host_socket. That leaks the first host socket AND —
+    // because the entry's poll handle is already bound to the first fd — the
+    // replacement socket never gets registered with libuv, so its response is
+    // never read and the guest connection hangs. Park the extra PCB for a
+    // deferred abort (aborting inside the accept callback risks UAF).
+    if (entry->conn_pcb ||
+        entry->host_socket != static_cast<uintptr_t>(SOCK_INVALID)) {
+        tcp_arg(new_pcb, nullptr);
+        deferred_conn_abort_.push_back(new_pcb);
+        return;
+    }
+
     entry->conn_pcb = new_pcb;
 
-    // Defer closing the listener — lwIP accesses pcb->listener AFTER
-    // the accept callback returns (tcp_backlog_accepted).
+    // Stop accepting on this listener and defer its close — lwIP accesses
+    // pcb->listener AFTER the accept callback returns (tcp_backlog_accepted).
+    // Clearing the accept callback prevents any further accept landing on
+    // this entry before the deferred close actually runs.
     if (entry->listen_pcb) {
+        tcp_accept(static_cast<struct tcp_pcb*>(entry->listen_pcb), nullptr);
         deferred_listen_close_.push_back(entry->listen_pcb);
         entry->listen_pcb = nullptr;
     }
@@ -347,6 +367,12 @@ void NetBackend::OnTcpAccepted(NatEntry* entry, void* new_pcb_v) {
     tcp_err(new_pcb, [](void* arg, err_t err) {
         auto* e = static_cast<NatEntry*>(arg);
         e->backend->OnTcpErr(e);
+    });
+    // Resume forwarding to the guest when its receive window reopens.
+    tcp_sent(new_pcb, [](void* arg, struct tcp_pcb* pcb, u16_t len) -> err_t {
+        auto* e = static_cast<NatEntry*>(arg);
+        if (e) e->backend->OnTcpSent(e);
+        return ERR_OK;
     });
 
     // Create host socket and connect to real destination.
@@ -423,6 +449,16 @@ void NetBackend::OnTcpErr(NatEntry* entry) {
     entry->state = NatState::Closed;
 }
 
+void NetBackend::OnTcpSent(NatEntry* entry) {
+    // The guest acked queued data, so lwIP's send buffer has room again.
+    // Flush any buffered guest-bound bytes; once drained, lift the read
+    // back-pressure so we resume pulling the host response.
+    DrainTcpToGuest(entry);
+    if (entry->pending_to_guest.empty() &&
+        entry->host_socket != static_cast<uintptr_t>(SOCK_INVALID))
+        UpdateNatPoll(entry);
+}
+
 // ============================================================
 // UDP NAT callback
 // ============================================================
@@ -466,10 +502,14 @@ void NetBackend::OnNatPollEvent(NatEntry* entry, int status, int events) {
         getsockopt(s, SOL_SOCKET, SO_ERROR,
                    SOCK_CAST(&sock_err), &optlen);
         if (sock_err != 0) {
-            SOCK_CLOSE(s);
+            // Stop the poll while the fd is valid (clears libuv's
+            // loop->watchers[fd]) and defer the close to the loop boundary so
+            // the fd number cannot be reused mid-iteration and inherit a stale
+            // watcher.
+            entry->poll.Stop();
+            DeferSocketClose(entry->host_socket);
             entry->host_socket = static_cast<uintptr_t>(SOCK_INVALID);
             entry->state = NatState::Closed;
-            entry->poll.Stop();
             return;
         }
         entry->state = NatState::Established;
@@ -520,7 +560,18 @@ void NetBackend::DrainTcpToGuest(NatEntry* entry) {
     uint16_t to_write = static_cast<uint16_t>(
         std::min<size_t>(avail, entry->pending_to_guest.size()));
     if (to_write > 0) {
-        tcp_write(pcb, entry->pending_to_guest.data(), to_write, TCP_WRITE_FLAG_COPY);
+        // Keep the data buffered if lwIP cannot queue it (e.g. ERR_MEM when
+        // the segment pool is exhausted); the tcp_sent callback / next poll
+        // retries. Erasing unconditionally would silently drop bytes.
+        err_t werr = tcp_write(pcb, entry->pending_to_guest.data(), to_write,
+                               TCP_WRITE_FLAG_COPY);
+        if (werr != ERR_OK) {
+            LOG_WARN("nat drain->guest tcp_write failed err=%d to_write=%u "
+                     "sndbuf=%u pending=%zu proxy_port=%u",
+                     (int)werr, (unsigned)to_write, (unsigned)avail,
+                     entry->pending_to_guest.size(), (unsigned)entry->proxy_port);
+            return;
+        }
         tcp_output(pcb);
         entry->pending_to_guest.erase(
             entry->pending_to_guest.begin(),
@@ -559,8 +610,12 @@ void NetBackend::HandleTcpReadable(NatEntry* entry) {
     if (n <= 0) {
         DrainTcpToGuest(entry);
         DetachAndCloseLwipPcb(entry);
+        // Stop the poll while the fd is valid, then defer the close to the loop
+        // boundary so the fd number cannot be reused this iteration (a reuse
+        // would inherit this entry's stale libuv watcher and silently lose
+        // epoll readiness — a permanent relay hang).
         entry->poll.Stop();
-        SOCK_CLOSE(s);
+        DeferSocketClose(entry->host_socket);
         entry->host_socket = static_cast<uintptr_t>(SOCK_INVALID);
         entry->state = NatState::HalfClosed;
         entry->last_active_ms = GetMonotonicMs();

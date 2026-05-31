@@ -25,7 +25,6 @@ extern "C" {
 #include <icmpapi.h>
 #endif
 
-
 // ============================================================
 // Monotonic time (milliseconds)
 // ============================================================
@@ -183,9 +182,32 @@ void NetBackend::InjectFrame(const uint8_t* frame, uint32_t len) {
 // Consolidated teardown helpers
 // ============================================================
 
+void NetBackend::DeferSocketClose(uintptr_t sock) {
+    if (sock == static_cast<uintptr_t>(SOCK_INVALID) || sock == ~(uintptr_t)0)
+        return;
+    deferred_socket_close_.push_back(sock);
+}
+
+void NetBackend::FlushDeferredSocketCloses() {
+    if (deferred_socket_close_.empty()) return;
+    std::vector<uintptr_t> fds;
+    fds.swap(deferred_socket_close_);
+    for (uintptr_t s : fds)
+        SOCK_CLOSE(static_cast<SocketHandle>(s));
+}
+
+void NetBackend::OnFdCloseCheck(uv_check_t* handle) {
+    static_cast<NetBackend*>(handle->data)->FlushDeferredSocketCloses();
+}
+
 void NetBackend::CloseHostSocket(NatEntry* e) {
     if (e->host_socket != static_cast<uintptr_t>(SOCK_INVALID)) {
-        SOCK_CLOSE(static_cast<SocketHandle>(e->host_socket));
+        // Stop polling while the fd is still valid (clears libuv's
+        // loop->watchers[fd] immediately), then defer the actual close to the
+        // loop boundary so the fd number cannot be reused mid-iteration. See
+        // DeferSocketClose for why immediate close causes a relay hang.
+        e->poll.Stop();
+        DeferSocketClose(e->host_socket);
         e->host_socket = static_cast<uintptr_t>(SOCK_INVALID);
     }
 }
@@ -212,7 +234,7 @@ void NetBackend::TeardownNatEntry(NatEntry* e) {
 void NetBackend::TeardownPfConn(PfEntry::Conn& c) {
     c.poll.Close();
     if (c.host_sock != ~(uintptr_t)0) {
-        SOCK_CLOSE(static_cast<SocketHandle>(c.host_sock));
+        DeferSocketClose(c.host_sock);
         c.host_sock = ~(uintptr_t)0;
     }
     if (c.guest_pcb) {
@@ -239,7 +261,36 @@ void NetBackend::RescheduleLwipTimer() {
 void NetBackend::OnLwipTimer(uv_timer_t* handle) {
     auto* self = static_cast<NetBackend*>(handle->data);
     sys_check_timeouts();
+    self->FlushStalledGuestWrites();
     self->RescheduleLwipTimer();
+}
+
+void NetBackend::FlushStalledGuestWrites() {
+    // While there are active TCP pcbs, lwIP keeps this timer scheduled at the
+    // TCP coarse interval (~250ms). The common case is handled instantly by
+    // tcp_sent; this fallback only retries guest-bound bytes that read
+    // back-pressure parked when a transient lwIP tcp_write failure (e.g.
+    // ERR_MEM) left pending_to_guest non-empty with no in-flight segment to
+    // trigger tcp_sent.
+    for (auto& e : nat_entries_) {
+        if (e->proto != IPPROTO_TCP) continue;
+        if (e->host_socket == static_cast<uintptr_t>(SOCK_INVALID)) continue;
+        if (e->poll.closing()) continue;
+        if (e->state == NatState::Closed || e->state == NatState::Listening)
+            continue;
+        if (e->pending_to_guest.empty() || !e->conn_pcb) continue;
+
+        DrainTcpToGuest(e.get());
+        if (e->pending_to_guest.empty()) UpdateNatPoll(e.get());
+    }
+    for (auto& pf : host_forwards_) {
+        for (auto& c : pf.conns) {
+            if (!c.guest_pcb || c.pending_to_guest.empty()) continue;
+            DrainPfToGuest(c);
+            if (c.pending_to_guest.empty() && c.host_sock != ~(uintptr_t)0)
+                UpdatePfConnPoll(c);
+        }
+    }
 }
 
 void NetBackend::OnCleanupTimer(uv_timer_t* handle) {
@@ -259,6 +310,10 @@ void NetBackend::OnTxReady(uv_async_t* handle) {
     for (auto* pcb : self->deferred_listen_close_)
         tcp_close(static_cast<struct tcp_pcb*>(pcb));
     self->deferred_listen_close_.clear();
+    // Abort surplus accepted PCBs outside the accept callback (safe here).
+    for (auto* pcb : self->deferred_conn_abort_)
+        tcp_abort(static_cast<struct tcp_pcb*>(pcb));
+    self->deferred_conn_abort_.clear();
     self->RescheduleLwipTimer();
 }
 
@@ -413,6 +468,11 @@ void NetBackend::OnStopSignal(uv_async_t* handle) {
         self->netif_ = nullptr;
     }
 
+    // The fd-close check handle is about to be torn down by uv_walk, so close
+    // any remaining deferred fds directly (safe during shutdown — no new
+    // sockets are created after this point).
+    self->FlushDeferredSocketCloses();
+
     uv_walk(&self->loop_, CloseWalkCb, nullptr);
 }
 
@@ -427,9 +487,19 @@ void NetBackend::UpdateNatPoll(NatEntry* entry) {
         entry->poll.Stop();
         return;
     }
-    int events = UV_READABLE;
+    int events = 0;
+    // Read from the host only once the guest-bound buffer has drained. This
+    // applies back-pressure (so we never buffer more than one window) and
+    // avoids spinning on a level-triggered readable fd while the guest TCP
+    // window is full; the tcp_sent callback re-arms reads once it reopens.
+    if (entry->pending_to_guest.empty())
+        events |= UV_READABLE;
     if (entry->state == NatState::Connecting || !entry->pending_to_host.empty())
         events |= UV_WRITABLE;
+    if (events == 0) {
+        entry->poll.Stop();
+        return;
+    }
 
     if (!entry->poll.active()) {
         entry->poll.Init(&loop_, s);
@@ -512,6 +582,13 @@ void NetBackend::NetworkThread() {
     stop_wakeup_.data = this;
     uv_async_init(&loop_, &stop_wakeup_, OnStopSignal);
 
+    // Runs once per loop iteration (after I/O callbacks) to close host sockets
+    // queued for deferred close, guaranteeing fd numbers are not reused while
+    // libuv may still reference them.
+    fd_close_check_.data = this;
+    uv_check_init(&loop_, &fd_close_check_);
+    uv_check_start(&fd_close_check_, OnFdCloseCheck);
+
     {
         std::lock_guard<std::mutex> lock(loop_ready_mutex_);
         loop_ready_ = true;
@@ -528,6 +605,9 @@ void NetBackend::NetworkThread() {
     // detached from the loop before we destroy the owning containers.
     while (uv_run(&loop_, UV_RUN_NOWAIT) != 0)
         ;
+
+    // Close any sockets still queued for deferred close after the loop ends.
+    FlushDeferredSocketCloses();
 
     nat_entries_.clear();
     for (auto& pf : host_forwards_)

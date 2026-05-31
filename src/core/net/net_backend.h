@@ -70,6 +70,7 @@ private:
     void OnTcpAccepted(NatEntry* entry, void* new_pcb);
     void OnTcpRecv(NatEntry* entry, void* pcb, void* p);
     void OnTcpErr(NatEntry* entry);
+    void OnTcpSent(NatEntry* entry);
 
     // UDP NAT
     void OnUdpRecv(NatEntry* entry, void* pcb, void* p);
@@ -81,6 +82,13 @@ private:
     void DrainTcpToHost(NatEntry* entry);
     void UpdateNatPoll(NatEntry* entry);
     void OnNatPollEvent(NatEntry* entry, int status, int events);
+
+    // Safety net (driven by the periodic lwIP timer): retry flushing any
+    // guest-bound buffer that read back-pressure parked. Reads are re-armed
+    // only via tcp_sent, which never fires when the last tcp_write could not
+    // queue anything (e.g. transient lwIP ERR_MEM with no in-flight data);
+    // this re-drains and re-arms so such a stall cannot wedge a stream.
+    void FlushStalledGuestWrites();
 
     // Consolidated teardown helpers (NatEntry only; TeardownPfConn declared after PfEntry)
     void CloseHostSocket(NatEntry* e);
@@ -134,6 +142,12 @@ private:
     // Listen PCBs to close after tcp_input returns (cannot close inside
     // accept callback because lwIP still accesses pcb->listener afterward).
     std::vector<void*> deferred_listen_close_;
+
+    // Surplus accepted PCBs to abort after tcp_input returns. A NAT entry
+    // maps a single guest flow to one host socket; if a second accept lands
+    // on the same entry, the extra PCB is parked here and aborted later
+    // (tcp_abort inside the accept callback risks a use-after-free).
+    std::vector<void*> deferred_conn_abort_;
 
     // NAT table
     enum class NatState : uint8_t {
@@ -227,13 +241,26 @@ private:
     uv_async_t tx_wakeup_{};
     uv_async_t pf_update_wakeup_{};
     uv_async_t stop_wakeup_{};
+    uv_check_t fd_close_check_{};
 
     static void OnLwipTimer(uv_timer_t* handle);
     static void OnCleanupTimer(uv_timer_t* handle);
     static void OnTxReady(uv_async_t* handle);
     static void OnPfUpdateReady(uv_async_t* handle);
     static void OnStopSignal(uv_async_t* handle);
+    static void OnFdCloseCheck(uv_check_t* handle);
     void RescheduleLwipTimer();
+
+    // Host sockets pending close. A polled fd must NOT be close()'d while the
+    // libuv loop might still reuse its number within the same iteration: the
+    // kernel reassigns a freed fd immediately, and a new poll on the reused
+    // number collides with libuv's bookkeeping for the old one (manifesting as
+    // a live socket that is silently dropped from the epoll set — a permanent
+    // relay hang). Deferring the close to a uv_check at the iteration boundary
+    // keeps the fd open (hence un-reusable) until libuv has fully settled.
+    std::vector<uintptr_t> deferred_socket_close_;
+    void DeferSocketClose(uintptr_t sock);
+    void FlushDeferredSocketCloses();
 
     std::mutex pf_update_mutex_;
     std::optional<std::vector<HostForward>> pending_pf_update_;

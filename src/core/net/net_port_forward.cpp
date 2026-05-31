@@ -79,7 +79,7 @@ void NetBackend::TeardownHostForwards() {
         for (auto& c : pf.conns) {
             c.poll.Close();
             if (c.host_sock != ~(uintptr_t)0) {
-                SOCK_CLOSE(static_cast<SocketHandle>(c.host_sock));
+                DeferSocketClose(c.host_sock);
                 c.host_sock = ~(uintptr_t)0;
             }
             if (c.guest_pcb) {
@@ -152,7 +152,11 @@ void NetBackend::DrainPfToGuest(PfEntry::Conn& conn) {
     uint16_t to_write = static_cast<uint16_t>(
         std::min<size_t>(avail, conn.pending_to_guest.size()));
     if (to_write > 0) {
-        tcp_write(pcb, conn.pending_to_guest.data(), to_write, TCP_WRITE_FLAG_COPY);
+        // Keep data buffered on a failed queue (e.g. ERR_MEM); the tcp_sent
+        // callback / next poll retries instead of dropping bytes.
+        if (tcp_write(pcb, conn.pending_to_guest.data(), to_write,
+                      TCP_WRITE_FLAG_COPY) != ERR_OK)
+            return;
         tcp_output(pcb);
         conn.pending_to_guest.erase(
             conn.pending_to_guest.begin(),
@@ -269,6 +273,15 @@ void NetBackend::OnPfListenerReadable(PfEntry* pf) {
         if (!c) return;
         c->guest_pcb = nullptr;
         c->backend->TeardownPfConn(*c);
+    });
+    // Resume forwarding to the guest when its receive window reopens.
+    tcp_sent(pcb, [](void* arg, struct tcp_pcb* pcb, u16_t len) -> err_t {
+        auto* c = static_cast<PfEntry::Conn*>(arg);
+        if (!c) return ERR_OK;
+        c->backend->DrainPfToGuest(*c);
+        if (c->pending_to_guest.empty() && c->host_sock != ~(uintptr_t)0)
+            c->backend->UpdatePfConnPoll(*c);
+        return ERR_OK;
     });
 
     tcp_connect(pcb, &guest_addr, pf->guest_port,

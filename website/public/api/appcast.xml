@@ -26,22 +26,22 @@
       />
     </item>
     <item>
-      <title>Version 0.8.0</title>
+      <title>Version 0.8.1</title>
       <description><![CDATA[
         <ul>
-          <li>- 修复若干bug</li>
+          <li>- 修复libuv复用fd导致连接卡住的bug</li>
           <li>- 重要‼ 0.5.7 之前版本，请在升级前确保已备份虚拟机内的重要数据</li>
         </ul>
       ]]></description>
-      <pubDate>Fri, 08 May 2026 00:00:00 -0000</pubDate>
+      <pubDate>Mon, 01 Jun 2026 00:00:00 -0000</pubDate>
       <sparkle:minimumSystemVersion>12</sparkle:minimumSystemVersion>
       <enclosure
-        url="https://files.xiaozhi.me/tenbox/releases/TenBox-0.8.0.zip"
+        url="https://files.xiaozhi.me/tenbox/releases/TenBox-0.8.1.zip"
         sparkle:os="macos"
-        sparkle:version="0.8.0"
-        sparkle:shortVersionString="0.8.0"
-        sparkle:edSignature="ofzj0VeQ8edjzR40AjZGWCEYffiZi/sLByUyRF/71qddMoywttEP0gCNGYVxIo9aAeb+P3mX4hm46h8VnTnyCA=="
-        length="4727818"
+        sparkle:version="0.8.1"
+        sparkle:shortVersionString="0.8.1"
+        sparkle:edSignature="3rfvSIVSC4ArURwNyNawC2grMjA/nXz0eaj6jNijhZfkiP/Q1zNNWgF6tmK8jmIJecolxPTC9ZGnem4URmaFCA=="
+        length="4730092"
         type="application/octet-stream"
       />
     </item>
