@@ -2,28 +2,30 @@
 import PackageDescription
 
 let package = Package(
-    name: "TenBoxManager",
+    name: "AgentSphereManager",
     platforms: [.macOS(.v12)],
     products: [
-        .executable(name: "TenBoxManager", targets: ["TenBoxManager"]),
+        .executable(name: "AgentSphereManager", targets: ["AgentSphereManager"])
     ],
     dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")
     ],
     targets: [
         .executableTarget(
-            name: "TenBoxManager",
+            name: "AgentSphereManager",
             dependencies: [
                 "TenBoxBridge",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: ".",
-            exclude: ["Bridge/include", "Bridge/Sources",
-                       "Bridge/TenBox-Bridging-Header.h",
-                       "Resources/Shaders.metal",
-                       "Resources/TenBox.entitlements",
-                       "Resources/Info.plist",
-                       "Package.swift"],
+            exclude: [
+                "Bridge/include", "Bridge/Sources",
+                "Bridge/TenBox-Bridging-Header.h",
+                "Resources/Shaders.metal",
+                "Resources/AgentSphere.entitlements",
+                "Resources/Info.plist",
+                "Package.swift",
+            ],
             sources: [
                 "TenBoxApp.swift",
                 "Views/ContentView.swift",
@@ -45,24 +47,30 @@ let package = Package(
                 "Bridge/VmProcessManager.swift",
                 "Services/ImageSourceService.swift",
                 "Services/LlmProxyService.swift",
+                "Services/OidcService.swift",
                 "Views/LlmProxyView.swift",
+                "Views/LoginView.swift",
             ],
             resources: [
-                .copy("Resources/icon.png"),
+                .copy("Resources/icon.png")
             ]
         ),
         .target(
             name: "TenBoxBridge",
             path: "Bridge",
-            exclude: ["IpcClientWrapper.swift", "Models.swift",
-                       "TenBoxBridgeWrapper.swift", "VmConfigStore.swift",
-                       "VmProcessManager.swift", "TenBox-Bridging-Header.h"],
-            sources: ["Sources/TenBoxBridge.mm", "Sources/TenBoxIPC.mm",
-                       "Sources/ipc/unix_socket.cpp", "Sources/ipc/protocol_v1.cpp",
-                       "Sources/ipc/shared_framebuffer_posix.cpp"],
+            exclude: [
+                "IpcClientWrapper.swift", "Models.swift",
+                "TenBoxBridgeWrapper.swift", "VmConfigStore.swift",
+                "VmProcessManager.swift", "TenBox-Bridging-Header.h",
+            ],
+            sources: [
+                "Sources/TenBoxBridge.mm", "Sources/TenBoxIPC.mm",
+                "Sources/ipc/unix_socket.cpp", "Sources/ipc/protocol_v1.cpp",
+                "Sources/ipc/shared_framebuffer_posix.cpp",
+            ],
             publicHeadersPath: "include",
             cxxSettings: [
-                .headerSearchPath("Sources"),
+                .headerSearchPath("Sources")
             ]
         ),
     ],

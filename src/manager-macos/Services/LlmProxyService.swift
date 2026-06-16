@@ -17,8 +17,9 @@ final class LlmProxyService {
     private var currentLogDate = ""
 
     static var logDir: String {
-        let paths = NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true)
-        let base = (paths.first ?? NSHomeDirectory() + "/Library/Application Support") + "/TenBox"
+        let paths = NSSearchPathForDirectoriesInDomains(
+            .applicationSupportDirectory, .userDomainMask, true)
+        let base = (paths.first ?? NSHomeDirectory() + "/Library/Application Support") + "/AgentSphere"
         return base + "/llm_logs"
     }
 
@@ -123,9 +124,11 @@ final class LlmProxyService {
         currentLogDate = ""
     }
 
-    private func writeLogEntry(requestBody: Data, responseBody: Data,
-                               alias: String, model: String,
-                               isStreaming: Bool, statusCode: Int) {
+    private func writeLogEntry(
+        requestBody: Data, responseBody: Data,
+        alias: String, model: String,
+        isStreaming: Bool, statusCode: Int
+    ) {
         logLock.lock()
         defer { logLock.unlock() }
         guard loggingEnabled, logFileHandle != nil else { return }
@@ -161,9 +164,12 @@ final class LlmProxyService {
         if statusCode >= 200 && statusCode < 300 {
             if isStreaming {
                 entry["response"] = Self.extractSseContent(responseBody)
-            } else if let resp = try? JSONSerialization.jsonObject(with: responseBody) as? [String: Any] {
+            } else if let resp = try? JSONSerialization.jsonObject(with: responseBody)
+                as? [String: Any]
+            {
                 if let choices = resp["choices"] as? [[String: Any]], let first = choices.first,
-                   let message = first["message"] {
+                    let message = first["message"]
+                {
                     entry["response"] = message
                 }
                 if let usage = resp["usage"] { entry["usage"] = usage }
@@ -178,8 +184,11 @@ final class LlmProxyService {
             }
         }
 
-        guard let lineData = try? JSONSerialization.data(withJSONObject: entry,
-                                                          options: [.sortedKeys]) else { return }
+        guard
+            let lineData = try? JSONSerialization.data(
+                withJSONObject: entry,
+                options: [.sortedKeys])
+        else { return }
         var output = lineData
         output.append(Data("\n".utf8))
         logFileHandle?.write(output)
@@ -209,11 +218,13 @@ final class LlmProxyService {
             let payload = String(trimmed.dropFirst(6))
             if payload == "[DONE]" { break }
             guard let chunkData = payload.data(using: .utf8),
-                  let j = try? JSONSerialization.jsonObject(with: chunkData) as? [String: Any],
-                  let choices = j["choices"] as? [[String: Any]] else { continue }
+                let j = try? JSONSerialization.jsonObject(with: chunkData) as? [String: Any],
+                let choices = j["choices"] as? [[String: Any]]
+            else { continue }
             for choice in choices {
                 if let delta = choice["delta"] as? [String: Any],
-                   let c = delta["content"] as? String {
+                    let c = delta["content"] as? String
+                {
                     content += c
                 }
             }
@@ -236,7 +247,8 @@ final class LlmProxyService {
     }
 
     private func readRequest(_ conn: NWConnection) {
-        conn.receive(minimumIncompleteLength: 1, maximumLength: 16384) { [weak self] data, _, isComplete, error in
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 16384) {
+            [weak self] data, _, isComplete, error in
             guard let self = self, let data = data, !data.isEmpty else {
                 conn.cancel()
                 return
@@ -253,13 +265,20 @@ final class LlmProxyService {
                 let headerEnd = range.upperBound
                 let headerData = buffer[buffer.startIndex..<range.lowerBound]
                 guard let headerStr = String(data: headerData, encoding: .utf8) else {
-                    conn.cancel(); return
+                    conn.cancel()
+                    return
                 }
 
                 let lines = headerStr.components(separatedBy: "\r\n")
-                guard let requestLine = lines.first else { conn.cancel(); return }
+                guard let requestLine = lines.first else {
+                    conn.cancel()
+                    return
+                }
                 let parts = requestLine.split(separator: " ", maxSplits: 2)
-                guard parts.count >= 2 else { conn.cancel(); return }
+                guard parts.count >= 2 else {
+                    conn.cancel()
+                    return
+                }
                 let method = String(parts[0])
                 let path = String(parts[1])
 
@@ -268,11 +287,14 @@ final class LlmProxyService {
                 for line in lines.dropFirst() {
                     let lower = line.lowercased()
                     if lower.hasPrefix("content-length:") {
-                        contentLength = Int(line.dropFirst("content-length:".count)
-                            .trimmingCharacters(in: .whitespaces)) ?? 0
+                        contentLength =
+                            Int(
+                                line.dropFirst("content-length:".count)
+                                    .trimmingCharacters(in: .whitespaces)) ?? 0
                     } else if lower.hasPrefix("connection:") {
                         if line.dropFirst("connection:".count)
-                            .trimmingCharacters(in: .whitespaces).lowercased() == "close" {
+                            .trimmingCharacters(in: .whitespaces).lowercased() == "close"
+                        {
                             keepAlive = false
                         }
                     }
@@ -284,17 +306,21 @@ final class LlmProxyService {
                 if remaining <= 0 {
                     let body = buffer[headerEnd..<(headerEnd + contentLength)]
                     buffer.removeSubrange(buffer.startIndex..<(headerEnd + contentLength))
-                    self.dispatchRequest(conn, method: method, path: path,
-                                         body: Data(body), keepAlive: keepAlive)
+                    self.dispatchRequest(
+                        conn, method: method, path: path,
+                        body: Data(body), keepAlive: keepAlive)
                 } else {
-                    readRemainingBody(conn, buffer: buffer, headerEnd: headerEnd,
-                                      contentLength: contentLength, method: method,
-                                      path: path, keepAlive: keepAlive)
+                    readRemainingBody(
+                        conn, buffer: buffer, headerEnd: headerEnd,
+                        contentLength: contentLength, method: method,
+                        path: path, keepAlive: keepAlive)
                 }
             } else {
-                conn.receive(minimumIncompleteLength: 1, maximumLength: 16384) { [weak self] data, _, _, _ in
+                conn.receive(minimumIncompleteLength: 1, maximumLength: 16384) {
+                    [weak self] data, _, _, _ in
                     guard self != nil, let data = data, !data.isEmpty else {
-                        conn.cancel(); return
+                        conn.cancel()
+                        return
                     }
                     buffer.append(data)
                     tryParse()
@@ -305,39 +331,48 @@ final class LlmProxyService {
         tryParse()
     }
 
-    private func readRemainingBody(_ conn: NWConnection, buffer: Data, headerEnd: Int,
-                                   contentLength: Int, method: String, path: String,
-                                   keepAlive: Bool) {
+    private func readRemainingBody(
+        _ conn: NWConnection, buffer: Data, headerEnd: Int,
+        contentLength: Int, method: String, path: String,
+        keepAlive: Bool
+    ) {
         var buf = buffer
         let needed = contentLength - (buf.count - headerEnd)
         if needed <= 0 {
             let body = buf[headerEnd..<(headerEnd + contentLength)]
-            dispatchRequest(conn, method: method, path: path, body: Data(body), keepAlive: keepAlive)
+            dispatchRequest(
+                conn, method: method, path: path, body: Data(body), keepAlive: keepAlive)
             return
         }
 
-        conn.receive(minimumIncompleteLength: 1, maximumLength: max(needed, 8192)) { [weak self] data, _, _, _ in
+        conn.receive(minimumIncompleteLength: 1, maximumLength: max(needed, 8192)) {
+            [weak self] data, _, _, _ in
             guard let self = self, let data = data, !data.isEmpty else {
-                conn.cancel(); return
+                conn.cancel()
+                return
             }
             buf.append(data)
-            self.readRemainingBody(conn, buffer: buf, headerEnd: headerEnd,
-                                   contentLength: contentLength, method: method,
-                                   path: path, keepAlive: keepAlive)
+            self.readRemainingBody(
+                conn, buffer: buf, headerEnd: headerEnd,
+                contentLength: contentLength, method: method,
+                path: path, keepAlive: keepAlive)
         }
     }
 
     // MARK: - Request dispatch
 
-    private func dispatchRequest(_ conn: NWConnection, method: String, path: String,
-                                 body: Data, keepAlive: Bool) {
+    private func dispatchRequest(
+        _ conn: NWConnection, method: String, path: String,
+        body: Data, keepAlive: Bool
+    ) {
         if method == "POST" && (path == "/v1/chat/completions" || path == "/chat/completions") {
             handleChatCompletions(conn, body: body, keepAlive: keepAlive)
         } else if method == "GET" && (path == "/v1/models" || path == "/models") {
             handleModels(conn, keepAlive: keepAlive)
         } else {
-            sendError(conn, status: 404, statusText: "Not Found",
-                      message: "Unknown endpoint: \(path)", keepAlive: keepAlive)
+            sendError(
+                conn, status: 404, statusText: "Not Found",
+                message: "Unknown endpoint: \(path)", keepAlive: keepAlive)
         }
     }
 
@@ -345,18 +380,21 @@ final class LlmProxyService {
 
     private func handleChatCompletions(_ conn: NWConnection, body: Data, keepAlive: Bool) {
         guard var json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
-            sendError(conn, status: 400, statusText: "Bad Request",
-                      message: "Invalid JSON body", keepAlive: keepAlive)
+            sendError(
+                conn, status: 400, statusText: "Bad Request",
+                message: "Invalid JSON body", keepAlive: keepAlive)
             return
         }
         guard let modelName = json["model"] as? String, !modelName.isEmpty else {
-            sendError(conn, status: 400, statusText: "Bad Request",
-                      message: "Missing 'model' field", keepAlive: keepAlive)
+            sendError(
+                conn, status: 400, statusText: "Bad Request",
+                message: "Missing 'model' field", keepAlive: keepAlive)
             return
         }
         guard let mapping = findMapping(modelName) else {
-            sendError(conn, status: 404, statusText: "Not Found",
-                      message: "No mapping configured for model: \(modelName)", keepAlive: keepAlive)
+            sendError(
+                conn, status: 404, statusText: "Not Found",
+                message: "No mapping configured for model: \(modelName)", keepAlive: keepAlive)
             return
         }
 
@@ -366,15 +404,17 @@ final class LlmProxyService {
         json["model"] = targetModel
 
         guard let modifiedBody = try? JSONSerialization.data(withJSONObject: json) else {
-            sendError(conn, status: 500, statusText: "Internal Server Error",
-                      message: "Failed to serialize request", keepAlive: keepAlive)
+            sendError(
+                conn, status: 500, statusText: "Internal Server Error",
+                message: "Failed to serialize request", keepAlive: keepAlive)
             return
         }
 
         let originalRequestBody = body
-        forwardToUpstream(conn, mapping: mapping, body: modifiedBody,
-                          isStreaming: isStreaming, keepAlive: keepAlive,
-                          logContext: (originalRequestBody, alias, targetModel))
+        forwardToUpstream(
+            conn, mapping: mapping, body: modifiedBody,
+            isStreaming: isStreaming, keepAlive: keepAlive,
+            logContext: (originalRequestBody, alias, targetModel))
     }
 
     private func handleModels(_ conn: NWConnection, keepAlive: Bool) {
@@ -387,24 +427,28 @@ final class LlmProxyService {
         }
         let response: [String: Any] = ["object": "list", "data": modelsList]
         guard let data = try? JSONSerialization.data(withJSONObject: response) else { return }
-        sendResponse(conn, status: 200, statusText: "OK",
-                     contentType: "application/json", body: data, keepAlive: keepAlive)
+        sendResponse(
+            conn, status: 200, statusText: "OK",
+            contentType: "application/json", body: data, keepAlive: keepAlive)
     }
 
     // MARK: - Upstream forwarding
 
     private typealias LogContext = (requestBody: Data, alias: String, model: String)
 
-    private func forwardToUpstream(_ conn: NWConnection, mapping: LlmModelMapping,
-                                   body: Data, isStreaming: Bool, keepAlive: Bool,
-                                   logContext: LogContext) {
+    private func forwardToUpstream(
+        _ conn: NWConnection, mapping: LlmModelMapping,
+        body: Data, isStreaming: Bool, keepAlive: Bool,
+        logContext: LogContext
+    ) {
         var urlStr = mapping.targetUrl
         if urlStr.hasSuffix("/") { urlStr = String(urlStr.dropLast()) }
         urlStr += "/chat/completions"
 
         guard let url = URL(string: urlStr) else {
-            sendError(conn, status: 502, statusText: "Bad Gateway",
-                      message: "Invalid upstream URL", keepAlive: keepAlive)
+            sendError(
+                conn, status: 502, statusText: "Bad Gateway",
+                message: "Invalid upstream URL", keepAlive: keepAlive)
             return
         }
 
@@ -423,42 +467,50 @@ final class LlmProxyService {
         if isStreaming {
             forwardStreaming(conn, request: request, keepAlive: keepAlive, logContext: logContext)
         } else {
-            forwardNonStreaming(conn, request: request, keepAlive: keepAlive, logContext: logContext)
+            forwardNonStreaming(
+                conn, request: request, keepAlive: keepAlive, logContext: logContext)
         }
     }
 
-    private func forwardNonStreaming(_ conn: NWConnection, request: URLRequest,
-                                    keepAlive: Bool, logContext: LogContext) {
+    private func forwardNonStreaming(
+        _ conn: NWConnection, request: URLRequest,
+        keepAlive: Bool, logContext: LogContext
+    ) {
         let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 502
             let body = data ?? Data()
             self?.queue.async {
-                self?.sendResponse(conn, status: statusCode, statusText: "OK",
-                                   contentType: "application/json", body: body, keepAlive: keepAlive)
-                self?.writeLogEntry(requestBody: logContext.requestBody,
-                                    responseBody: body,
-                                    alias: logContext.alias,
-                                    model: logContext.model,
-                                    isStreaming: false,
-                                    statusCode: statusCode)
+                self?.sendResponse(
+                    conn, status: statusCode, statusText: "OK",
+                    contentType: "application/json", body: body, keepAlive: keepAlive)
+                self?.writeLogEntry(
+                    requestBody: logContext.requestBody,
+                    responseBody: body,
+                    alias: logContext.alias,
+                    model: logContext.model,
+                    isStreaming: false,
+                    statusCode: statusCode)
             }
         }
         task.resume()
     }
 
-    private func forwardStreaming(_ conn: NWConnection, request: URLRequest,
-                                  keepAlive: Bool, logContext: LogContext) {
+    private func forwardStreaming(
+        _ conn: NWConnection, request: URLRequest,
+        keepAlive: Bool, logContext: LogContext
+    ) {
         let delegate = StreamingDelegate(connection: conn, keepAlive: keepAlive, proxyQueue: queue)
         delegate.readNextRequest = { [weak self] in
             self?.readRequest(conn)
         }
         delegate.onComplete = { [weak self] sseData, statusCode in
-            self?.writeLogEntry(requestBody: logContext.requestBody,
-                                responseBody: sseData,
-                                alias: logContext.alias,
-                                model: logContext.model,
-                                isStreaming: true,
-                                statusCode: statusCode)
+            self?.writeLogEntry(
+                requestBody: logContext.requestBody,
+                responseBody: sseData,
+                alias: logContext.alias,
+                model: logContext.model,
+                isStreaming: true,
+                statusCode: statusCode)
         }
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 300
@@ -476,30 +528,38 @@ final class LlmProxyService {
         return mappings.first(where: { $0.alias == modelName })
     }
 
-    private func sendError(_ conn: NWConnection, status: Int, statusText: String,
-                           message: String, keepAlive: Bool) {
-        let json: [String: Any] = ["error": ["message": message, "type": "proxy_error", "code": status]]
+    private func sendError(
+        _ conn: NWConnection, status: Int, statusText: String,
+        message: String, keepAlive: Bool
+    ) {
+        let json: [String: Any] = [
+            "error": ["message": message, "type": "proxy_error", "code": status]
+        ]
         guard let data = try? JSONSerialization.data(withJSONObject: json) else { return }
-        sendResponse(conn, status: status, statusText: statusText,
-                     contentType: "application/json", body: data, keepAlive: keepAlive)
+        sendResponse(
+            conn, status: status, statusText: statusText,
+            contentType: "application/json", body: data, keepAlive: keepAlive)
     }
 
-    private func sendResponse(_ conn: NWConnection, status: Int, statusText: String,
-                              contentType: String, body: Data, keepAlive: Bool) {
-        let header = "HTTP/1.1 \(status) \(statusText)\r\n" +
-                     "Content-Type: \(contentType)\r\n" +
-                     "Content-Length: \(body.count)\r\n" +
-                     "Connection: \(keepAlive ? "keep-alive" : "close")\r\n" +
-                     "\r\n"
+    private func sendResponse(
+        _ conn: NWConnection, status: Int, statusText: String,
+        contentType: String, body: Data, keepAlive: Bool
+    ) {
+        let header =
+            "HTTP/1.1 \(status) \(statusText)\r\n" + "Content-Type: \(contentType)\r\n"
+            + "Content-Length: \(body.count)\r\n"
+            + "Connection: \(keepAlive ? "keep-alive" : "close")\r\n" + "\r\n"
         var payload = Data(header.utf8)
         payload.append(body)
-        conn.send(content: payload, completion: .contentProcessed { [weak self] _ in
-            if keepAlive {
-                self?.readRequest(conn)
-            } else {
-                conn.cancel()
-            }
-        })
+        conn.send(
+            content: payload,
+            completion: .contentProcessed { [weak self] _ in
+                if keepAlive {
+                    self?.readRequest(conn)
+                } else {
+                    conn.cancel()
+                }
+            })
     }
 }
 
@@ -526,21 +586,21 @@ private class StreamingDelegate: NSObject, URLSessionDataDelegate {
         self.proxyQueue = proxyQueue
     }
 
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
-                    didReceive response: URLResponse,
-                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+    func urlSession(
+        _ session: URLSession, dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 200
         upstreamStatusCode = status
         let ct = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? ""
         let isSSE = ct.lowercased().contains("text/event-stream")
 
         let respCT = isSSE ? "text/event-stream; charset=utf-8" : ct
-        let header = "HTTP/1.1 \(status) OK\r\n" +
-                     "Content-Type: \(respCT)\r\n" +
-                     (isSSE ? "Cache-Control: no-cache\r\n" : "") +
-                     "Transfer-Encoding: chunked\r\n" +
-                     "Connection: \(keepAlive ? "keep-alive" : "close")\r\n" +
-                     "\r\n"
+        let header =
+            "HTTP/1.1 \(status) OK\r\n" + "Content-Type: \(respCT)\r\n"
+            + (isSSE ? "Cache-Control: no-cache\r\n" : "") + "Transfer-Encoding: chunked\r\n"
+            + "Connection: \(keepAlive ? "keep-alive" : "close")\r\n" + "\r\n"
         enqueueChunk(Data(header.utf8))
         headerSent = true
         completionHandler(.allow)
@@ -556,7 +616,8 @@ private class StreamingDelegate: NSObject, URLSessionDataDelegate {
         enqueueChunk(payload)
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?)
+    {
         proxyQueue.async { [self] in
             if let error = error {
                 // Upstream failed (timeout, network error, etc.).
@@ -588,12 +649,14 @@ private class StreamingDelegate: NSObject, URLSessionDataDelegate {
         }
         isSending = true
         let data = pendingChunks.removeFirst()
-        connection.send(content: data, completion: .contentProcessed { [self] _ in
-            proxyQueue.async { [self] in
-                isSending = false
-                drainQueue()
-            }
-        })
+        connection.send(
+            content: data,
+            completion: .contentProcessed { [self] _ in
+                proxyQueue.async { [self] in
+                    isSending = false
+                    drainQueue()
+                }
+            })
     }
 
     private func finish() {

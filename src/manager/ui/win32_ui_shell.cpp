@@ -3,12 +3,15 @@
 #include "manager/ui/create_vm_dialog.h"
 #include "manager/ui/settings_dialog.h"
 #include "manager/ui/llm_proxy_dialog.h"
+#include "manager/ui/login_dialog.h"
 #include "manager/ui/win32_display_panel.h"
 #include "manager/ui/info_tab.h"
 #include "manager/ui/console_tab.h"
 #include "manager/ui/vm_listview.h"
 #include "manager/i18n.h"
 #include "manager/app_settings.h"
+#include "manager/oidc_client.h"
+#include "manager/oidc_token_store.h"
 #include "manager/resource.h"
 #include "version.h"
 
@@ -61,6 +64,8 @@ enum CmdId : UINT {
     IDM_LLM_PROXY     = 1027,
     IDM_HELP_DOC      = 1028,
     IDM_TRAY_TOGGLE   = 1029,
+    IDM_LOGIN         = 1030,
+    IDM_LOGOUT        = 1031,
 };
 
 // ── Control IDs ──
@@ -70,6 +75,9 @@ enum CtlId : UINT {
     IDC_STATUSBAR   = 2002,
     IDC_TAB         = 2007,
     IDC_SPRING_SEP  = 2010,
+    IDC_USER_FOOTER = 2011,
+    IDC_USER_NAME   = 2012,
+    IDC_LOGOUT_BTN  = 2013,
 };
 
 // WM_APP range for cross-thread invoke
@@ -145,6 +153,12 @@ struct Win32UiShell::Impl {
     HWND tab        = nullptr;
     HMENU menu_bar  = nullptr;
 
+    // User info footer (bottom of left pane)
+    HWND user_footer        = nullptr;  // Container background
+    HWND user_name          = nullptr;  // Static with display name
+    HWND user_logout_btn    = nullptr;  // Logout button
+    static constexpr int kUserFooterHeight96 = 36;
+
     NOTIFYICONDATAW nid{};   // tray icon data
     bool tray_added = false; // true after Shell_NotifyIcon(NIM_ADD)
     bool real_exit  = false; // true => bypass close-to-tray and actually quit
@@ -189,6 +203,11 @@ struct Win32UiShell::Impl {
 
     std::vector<VmRecord> records;
     int selected_index = -1;
+
+    // OIDC login state
+    manager::OidcToken oidc_token;
+    bool oidc_authenticated = false;
+    std::string user_display_name;  // Displayed in user info footer
 
     // Splitter between left pane (VM list) and right pane (tabs)
     int left_pane_width = kDefaultLeftPaneWidth96;
@@ -305,7 +324,8 @@ static ATOM RegisterMainClass(HINSTANCE hinst) {
 
 // ── Menu building ──
 
-static HMENU BuildMenuBar(bool show_toolbar) {
+static HMENU BuildMenuBar(bool show_toolbar, bool is_logged_in,
+                          const std::string &user_display_name) {
     using S = i18n::S;
     HMENU bar = CreateMenu();
 
@@ -314,6 +334,24 @@ static HMENU BuildMenuBar(bool show_toolbar) {
     AppendMenuW(file_menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(file_menu, MF_STRING, IDM_SETTINGS, i18n::tr_w(S::kMenuSettings).c_str());
     AppendMenuW(file_menu, MF_STRING, IDM_LLM_PROXY, i18n::tr_w(S::kMenuLlmProxy).c_str());
+    AppendMenuW(file_menu, MF_SEPARATOR, 0, nullptr);
+    // Login / Logout
+    if (!is_logged_in) {
+        AppendMenuW(file_menu, MF_STRING, IDM_LOGIN,
+                    i18n::tr_w(S::kMenuLogin).c_str());
+    } else {
+        // Show "Signed in as: XXX" (grayed, informational) then Logout
+        std::string info_str;
+        if (!user_display_name.empty()) {
+            info_str = i18n::fmt(S::kLoginUserInfo, user_display_name.c_str());
+        } else {
+            info_str = i18n::tr(S::kLoginSuccess);
+        }
+        AppendMenuW(file_menu, MF_STRING | MF_GRAYED, 0,
+                    i18n::to_wide(info_str).c_str());
+        AppendMenuW(file_menu, MF_STRING, IDM_LOGOUT,
+                    i18n::tr_w(S::kMenuLogout).c_str());
+    }
     AppendMenuW(file_menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(file_menu, MF_STRING, IDM_EXIT, i18n::tr_w(S::kMenuExit).c_str());
     AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(file_menu), i18n::tr_w(S::kMenuManager).c_str());
@@ -338,10 +376,10 @@ static HMENU BuildMenuBar(bool show_toolbar) {
     AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(view_menu), i18n::tr_w(S::kMenuView).c_str());
 
     HMENU help_menu = CreatePopupMenu();
-    AppendMenuW(help_menu, MF_STRING, IDM_WEBSITE,      i18n::tr_w(S::kMenuWebsite).c_str());
-    AppendMenuW(help_menu, MF_STRING, IDM_HELP_DOC,     i18n::tr_w(S::kMenuHelpDoc).c_str());
-    AppendMenuW(help_menu, MF_STRING, IDM_CHECK_UPDATE,  i18n::tr_w(S::kMenuCheckUpdate).c_str());
-    AppendMenuW(help_menu, MF_SEPARATOR, 0, nullptr);
+    // AppendMenuW(help_menu, MF_STRING, IDM_WEBSITE,      i18n::tr_w(S::kMenuWebsite).c_str());
+    // AppendMenuW(help_menu, MF_STRING, IDM_HELP_DOC,     i18n::tr_w(S::kMenuHelpDoc).c_str());
+    // AppendMenuW(help_menu, MF_STRING, IDM_CHECK_UPDATE,  i18n::tr_w(S::kMenuCheckUpdate).c_str());
+    // AppendMenuW(help_menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(help_menu, MF_STRING, IDM_ABOUT,        i18n::tr_w(S::kMenuAbout).c_str());
     AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(help_menu), i18n::tr_w(S::kMenuHelp).c_str());
 
@@ -643,6 +681,17 @@ static void ResizeWindowForDisplay(Impl* p, uint32_t vm_width, uint32_t vm_heigh
 // Singleton shell pointer for use in static functions
 static Win32UiShell* g_shell = nullptr;
 
+// Rebuild the menu bar and re-attach it to the main window.
+// Called after login / logout to update the login-related menu items.
+static void RebuildMenuBar(Impl* p, ManagerService& mgr) {
+    HMENU old_menu = p->menu_bar;
+    p->menu_bar = BuildMenuBar(mgr.app_settings().show_toolbar,
+                               p->oidc_authenticated,
+                               p->oidc_token.display_name);
+    SetMenu(p->hwnd, p->menu_bar);
+    if (old_menu) DestroyMenu(old_menu);
+}
+
 static void LayoutControls(Impl* p) {
     if (!p->hwnd) return;
 
@@ -668,8 +717,43 @@ static void LayoutControls(Impl* p) {
     int content_h   = ch - tb_h - sb_h;
     if (content_h < 0) content_h = 0;
 
-    MoveWindow(p->vm_listview.handle(), 0, content_top, p->left_pane_width, content_h, TRUE);
+    // User footer height (leave space at bottom of left pane only when authenticated)
+    int footer_h = p->oidc_authenticated ? p->Dpi(Impl::kUserFooterHeight96) : 0;
+    int vm_list_h = content_h - footer_h;
+    if (vm_list_h < 0) vm_list_h = 0;
+
+    MoveWindow(p->vm_listview.handle(), 0, content_top, p->left_pane_width, vm_list_h, TRUE);
     p->vm_listview.UpdateColumnWidth();
+
+    // User info footer at bottom of left pane
+    // All controls are direct children of main window, so positions are relative to main window
+    // Only show when authenticated
+    bool show_footer = p->oidc_authenticated;
+    int footer_y = content_top + vm_list_h;
+    if (p->user_footer) {
+        ShowWindow(p->user_footer, show_footer ? SW_SHOW : SW_HIDE);
+        if (show_footer) {
+            MoveWindow(p->user_footer, 0, footer_y, p->left_pane_width, footer_h, TRUE);
+        }
+    }
+    if (p->user_name) {
+        ShowWindow(p->user_name, show_footer ? SW_SHOW : SW_HIDE);
+    }
+    if (p->user_logout_btn) {
+        ShowWindow(p->user_logout_btn, show_footer ? SW_SHOW : SW_HIDE);
+    }
+
+    if (show_footer) {
+        int margin = p->Dpi(12);
+        int btn_w = p->Dpi(60), btn_h = p->Dpi(24);
+        int btn_y = footer_y + (footer_h - btn_h) / 2;
+
+        // User name (left side)
+        int name_w = p->left_pane_width - btn_w - margin * 3;
+        MoveWindow(p->user_name, margin, footer_y, name_w > 0 ? name_w : 0, footer_h, TRUE);
+        // Logout button (right side)
+        MoveWindow(p->user_logout_btn, p->left_pane_width - btn_w - margin, btn_y, btn_w, btn_h, TRUE);
+    }
 
     int rx = p->left_pane_width + p->SplitterWidth();
     int rw = cw - rx;
@@ -827,6 +911,18 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         return 0;
 
+    case WM_CTLCOLORSTATIC: {
+        HDC hdc = reinterpret_cast<HDC>(wp);
+        HWND ctl = reinterpret_cast<HWND>(lp);
+        if (ctl == p->user_footer) {
+            // Draw footer background (light gray with top border)
+            SetBkColor(hdc, RGB(240, 240, 240));
+            SetTextColor(hdc, RGB(60, 60, 60));
+            return reinterpret_cast<LRESULT>(GetStockObject(LTGRAY_BRUSH));
+        }
+        break;
+    }
+
     case WM_COMMAND: {
         UINT cmd = LOWORD(wp);
         UINT code = HIWORD(wp);
@@ -847,6 +943,39 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
 
+        // Logout button in user footer
+        if (cmd == IDC_LOGOUT_BTN && code == BN_CLICKED) {
+            manager::OidcClearToken();
+            p->oidc_token = manager::OidcToken{};
+            p->oidc_authenticated = false;
+            p->user_display_name.clear();
+            RebuildMenuBar(p, shell->manager_);
+            LayoutControls(p);  // Hide footer
+
+            // Show login dialog again (modal)
+            const auto& s = shell->manager_.app_settings();
+            manager::OidcConfig cfg;
+            cfg.cloud_url = s.cloud_url.empty()
+                ? "https://agent-sphere.pangustudio.com" : s.cloud_url;
+            cfg.oidc_issuer = s.oidc_issuer.empty()
+                ? "https://account-xc.pangustudio.com" : s.oidc_issuer;
+            manager::OidcToken token;
+            if (!ShowLoginDialog(hwnd, cfg, &token)) {
+                // Login cancelled — exit application
+                PostQuitMessage(0);
+            } else {
+                p->oidc_token = token;
+                p->oidc_authenticated = true;
+                p->user_display_name = token.display_name;
+                manager::OidcSaveToken(token);
+                SetWindowTextW(p->user_name,
+                    i18n::to_wide(p->user_display_name.empty() ? i18n::tr(i18n::S::kLoggedIn) : p->user_display_name).c_str());
+                RebuildMenuBar(p, shell->manager_);
+                LayoutControls(p);  // Show footer
+            }
+            return 0;
+        }
+
         switch (cmd) {
         case IDM_NEW_VM: {
             std::string error;
@@ -860,8 +989,54 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case IDM_SETTINGS:
             ShowSettingsDialog(hwnd, shell->manager_);
             return 0;
-        case IDM_LLM_PROXY:
-            ShowLlmProxyDialog(hwnd, shell->manager_.app_settings().llm_proxy,
+        case IDM_LOGIN: {
+            const auto& s = shell->manager_.app_settings();
+            manager::OidcConfig cfg;
+            cfg.cloud_url = s.cloud_url.empty()
+                ? "https://agent-sphere.pangustudio.com" : s.cloud_url;
+            cfg.oidc_issuer = s.oidc_issuer.empty()
+                ? "https://account-xc.pangustudio.com" : s.oidc_issuer;
+            manager::OidcToken token;
+            if (ShowLoginDialog(hwnd, cfg, &token)) {
+                p->oidc_token = token;
+                p->oidc_authenticated = true;
+                manager::OidcSaveToken(token);
+                RebuildMenuBar(p, shell->manager_);
+            }
+            return 0;
+        }
+        case IDM_LOGOUT: {
+            manager::OidcClearToken();
+            p->oidc_token = manager::OidcToken{};
+            p->oidc_authenticated = false;
+            p->user_display_name.clear();
+            RebuildMenuBar(p, shell->manager_);
+            LayoutControls(p);  // Hide footer
+
+            // Show login dialog again (modal)
+            const auto& s = shell->manager_.app_settings();
+            manager::OidcConfig cfg;
+            cfg.cloud_url = s.cloud_url.empty()
+                ? "https://agent-sphere.pangustudio.com" : s.cloud_url;
+            cfg.oidc_issuer = s.oidc_issuer.empty()
+                ? "https://account-xc.pangustudio.com" : s.oidc_issuer;
+            manager::OidcToken token;
+            if (!ShowLoginDialog(hwnd, cfg, &token)) {
+                // Login cancelled — exit application
+                PostQuitMessage(0);
+            } else {
+                p->oidc_token = token;
+                p->oidc_authenticated = true;
+                p->user_display_name = token.display_name;
+                manager::OidcSaveToken(token);
+                SetWindowTextW(p->user_name,
+                    i18n::to_wide(p->user_display_name.empty() ? i18n::tr(i18n::S::kLoggedIn) : p->user_display_name).c_str());
+                RebuildMenuBar(p, shell->manager_);
+                LayoutControls(p);  // Show footer
+            }
+            return 0;
+        }
+        case IDM_LLM_PROXY:            ShowLlmProxyDialog(hwnd, shell->manager_.app_settings().llm_proxy,
                 [&shell](const settings::LlmProxySettings& settings) {
                     shell->manager_.app_settings().llm_proxy = settings;
                     shell->manager_.NotifyLlmProxyChanged();
@@ -1497,7 +1672,18 @@ Win32UiShell::Win32UiShell(ManagerService& manager)
     }
 
     i18n::InitLanguage();
-    impl_->menu_bar = BuildMenuBar(manager_.app_settings().show_toolbar);
+
+    // Restore persisted OIDC token
+    manager::OidcToken stored_token;
+    if (manager::OidcLoadToken(&stored_token)) {
+        impl_->oidc_token = stored_token;
+        impl_->oidc_authenticated = true;
+        impl_->user_display_name = stored_token.display_name;
+    }
+
+    impl_->menu_bar = BuildMenuBar(manager_.app_settings().show_toolbar,
+                                   impl_->oidc_authenticated,
+                                   impl_->oidc_token.display_name);
 
     impl_->hwnd = CreateWindowExW(0, kWndClass, i18n::tr_w(i18n::S::kAppTitle).c_str(),
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
@@ -1568,6 +1754,30 @@ Win32UiShell::Win32UiShell(ManagerService& manager)
     });
     impl_->info_tab.Create(impl_->hwnd, hinst, impl_->ui_font);
     impl_->console_tab.Create(impl_->hwnd, hinst, impl_->mono_font, impl_->ui_font);
+
+    // User info footer (bottom of left pane, shows logged-in user + logout)
+    // All controls are direct children of main window for proper message routing
+    int footer_h = impl_->Dpi(Impl::kUserFooterHeight96);
+    impl_->user_footer = CreateWindowExW(0, L"STATIC", L"",
+        WS_CHILD | WS_CLIPSIBLINGS,
+        0, 0, 0, footer_h, impl_->hwnd,
+        reinterpret_cast<HMENU>(IDC_USER_FOOTER), hinst, nullptr);
+
+    // User name
+    impl_->user_name = CreateWindowExW(0, L"STATIC",
+        i18n::to_wide(impl_->user_display_name.empty() ? i18n::tr(i18n::S::kLoggedIn) : impl_->user_display_name).c_str(),
+        WS_CHILD | SS_LEFT | SS_CENTERIMAGE,
+        0, 0, 100, footer_h, impl_->hwnd,
+        reinterpret_cast<HMENU>(IDC_USER_NAME), hinst, nullptr);
+    SendMessage(impl_->user_name, WM_SETFONT, reinterpret_cast<WPARAM>(impl_->ui_font), FALSE);
+
+    // Logout button
+    impl_->user_logout_btn = CreateWindowExW(0, L"BUTTON",
+        i18n::tr_w(i18n::S::kMenuLogout).c_str(),
+        WS_CHILD | BS_PUSHBUTTON,
+        0, 0, impl_->Dpi(60), impl_->Dpi(24), impl_->hwnd,
+        reinterpret_cast<HMENU>(IDC_LOGOUT_BTN), hinst, nullptr);
+    SendMessage(impl_->user_logout_btn, WM_SETFONT, reinterpret_cast<WPARAM>(impl_->ui_font), FALSE);
 
     // Tab control
     impl_->tab = CreateWindowExW(0, WC_TABCONTROLW, nullptr,
@@ -1822,8 +2032,46 @@ Win32UiShell::~Win32UiShell() {
 }
 
 void Win32UiShell::Show() {
+    // Show main window first
     ShowWindow(impl_->hwnd, SW_SHOW);
     UpdateWindow(impl_->hwnd);
+
+    // Update user info footer display
+    if (impl_->user_name) {
+        SetWindowTextW(impl_->user_name,
+            i18n::to_wide(impl_->user_display_name.empty() ? i18n::tr(i18n::S::kLoggedIn) : impl_->user_display_name).c_str());
+    }
+
+    // If not authenticated, show modal login dialog (blocks main window)
+    if (!impl_->oidc_authenticated) {
+        const auto& s = manager_.app_settings();
+        manager::OidcConfig cfg;
+        cfg.cloud_url = s.cloud_url.empty()
+            ? "https://agent-sphere.pangustudio.com" : s.cloud_url;
+        cfg.oidc_issuer = s.oidc_issuer.empty()
+            ? "https://account-xc.pangustudio.com" : s.oidc_issuer;
+
+        manager::OidcToken token;
+        if (!ShowLoginDialog(impl_->hwnd, cfg, &token)) {
+            // Login cancelled or failed — exit application
+            PostQuitMessage(0);
+            return;
+        }
+
+        impl_->oidc_token = token;
+        impl_->oidc_authenticated = true;
+        impl_->user_display_name = token.display_name;
+        manager::OidcSaveToken(token);
+        RebuildMenuBar(impl_.get(), manager_);
+
+        // Update user info footer after login
+        if (impl_->user_name) {
+            SetWindowTextW(impl_->user_name,
+                i18n::to_wide(impl_->user_display_name.empty() ? i18n::tr(i18n::S::kLoggedIn) : impl_->user_display_name).c_str());
+        }
+        // Re-layout to show footer
+        LayoutControls(impl_.get());
+    }
 }
 
 void Win32UiShell::Hide() {

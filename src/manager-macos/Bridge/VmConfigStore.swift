@@ -3,8 +3,10 @@ import Foundation
 class VmConfigStore {
 
     static let appSupportDirectory: URL = {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = appSupport.appendingPathComponent("TenBox")
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first!
+        let dir = appSupport.appendingPathComponent("AgentSphere")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }()
@@ -60,7 +62,9 @@ class VmConfigStore {
 
     func listVms() -> [(id: String, config: VmConfig)] {
         let fm = FileManager.default
-        guard let items = try? fm.contentsOfDirectory(atPath: Self.vmsDirectory.path) else { return [] }
+        guard let items = try? fm.contentsOfDirectory(atPath: Self.vmsDirectory.path) else {
+            return []
+        }
         var result: [(id: String, config: VmConfig)] = []
         for item in items {
             guard let config = readConfig(vmId: item) else { continue }
@@ -118,8 +122,10 @@ class VmConfigStore {
     // MARK: - Edit
 
     @discardableResult
-    func editVm(id: String, name: String, memoryMb: Int, cpuCount: Int,
-                netEnabled: Bool, debugMode: Bool) -> Bool {
+    func editVm(
+        id: String, name: String, memoryMb: Int, cpuCount: Int,
+        netEnabled: Bool, debugMode: Bool
+    ) -> Bool {
         guard var config = readConfig(vmId: id) else { return false }
         config.name = name
         config.memoryMb = memoryMb
@@ -241,7 +247,9 @@ class VmConfigStore {
     @discardableResult
     func removeSharedFolder(tag: String, fromVm vmId: String) -> Bool {
         guard var config = readConfig(vmId: vmId) else { return false }
-        guard let idx = config.sharedFolders.firstIndex(where: { $0.tag == tag }) else { return false }
+        guard let idx = config.sharedFolders.firstIndex(where: { $0.tag == tag }) else {
+            return false
+        }
         config.sharedFolders.remove(at: idx)
         return writeConfig(vmId: vmId, config: config)
     }
@@ -266,7 +274,9 @@ class VmConfigStore {
     @discardableResult
     func removeHostForward(hostPort: UInt16, fromVm vmId: String) -> Bool {
         guard var config = readConfig(vmId: vmId) else { return false }
-        guard let idx = config.hostForwards.firstIndex(where: { $0.hostPort == hostPort }) else { return false }
+        guard let idx = config.hostForwards.firstIndex(where: { $0.hostPort == hostPort }) else {
+            return false
+        }
         config.hostForwards.remove(at: idx)
         return writeConfig(vmId: vmId, config: config)
     }
@@ -276,7 +286,9 @@ class VmConfigStore {
     @discardableResult
     func addGuestForward(_ gf: GuestForward, toVm vmId: String) -> Bool {
         guard var config = readConfig(vmId: vmId) else { return false }
-        if config.guestForwards.contains(where: { $0.guestIp == gf.guestIp && $0.guestPort == gf.guestPort }) {
+        if config.guestForwards.contains(where: {
+            $0.guestIp == gf.guestIp && $0.guestPort == gf.guestPort
+        }) {
             return false
         }
         config.guestForwards.append(GuestForwardConfig.from(gf))
@@ -286,9 +298,11 @@ class VmConfigStore {
     @discardableResult
     func removeGuestForward(guestIp: String, guestPort: UInt16, fromVm vmId: String) -> Bool {
         guard var config = readConfig(vmId: vmId) else { return false }
-        guard let idx = config.guestForwards.firstIndex(where: {
-            $0.guestIp == guestIp && $0.guestPort == guestPort
-        }) else { return false }
+        guard
+            let idx = config.guestForwards.firstIndex(where: {
+                $0.guestIp == guestIp && $0.guestPort == guestPort
+            })
+        else { return false }
         config.guestForwards.remove(at: idx)
         return writeConfig(vmId: vmId, config: config)
     }

@@ -269,6 +269,18 @@ static const std::unordered_map<S, const char*> kStringsEn = {
     {S::kTrayShow, "Show TenBox"},
     {S::kTrayHide, "Hide to Tray"},
     {S::kSettingsCloseToTray, "Close button minimizes to system tray"},
+
+    // Login dialog
+    {S::kLoginTitle, "Sign In"},
+    {S::kLoginSubtitle, "Sign in to continue using Agent Sphere"},
+    {S::kLoginBtn, "Sign In"},
+    {S::kLoginWaiting, "Waiting for browser login..."},
+    {S::kLoginCloudUrlEmpty, "Cloud URL is not configured"},
+    {S::kLoginSuccess, "Signed in successfully"},
+    {S::kMenuLogin, "Sign In..."},
+    {S::kMenuLogout, "Sign Out"},
+    {S::kLoginUserInfo, "Signed in as: %s"},
+    {S::kLoggedIn, "Signed In"},
 };
 
 // Simplified Chinese strings; each key explicitly bound (no order dependency)
@@ -527,6 +539,18 @@ static const std::unordered_map<S, const char*> kStringsZhCN = {
     {S::kTrayShow, "显示 TenBox"},
     {S::kTrayHide, "隐藏到托盘"},
     {S::kSettingsCloseToTray, "点击关闭按钮时最小化到系统托盘"},
+
+    // Login dialog
+    {S::kLoginTitle, "登录"},
+    {S::kLoginSubtitle, "登录以继续使用 Agent Sphere 管理器"},
+    {S::kLoginBtn, "登录"},
+    {S::kLoginWaiting, "等待浏览器登录..."},
+    {S::kLoginCloudUrlEmpty, "Cloud URL 未配置"},
+    {S::kLoginSuccess, "登录成功"},
+    {S::kMenuLogin, "登录..."},
+    {S::kMenuLogout, "注销"},
+    {S::kLoginUserInfo, "已登录: %s"},
+    {S::kLoggedIn, "已登录"},
 };
 
 void InitLanguage() {

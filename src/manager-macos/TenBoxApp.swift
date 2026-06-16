@@ -1,14 +1,14 @@
-import SwiftUI
 import AppKit
 import Combine
-import Sparkle
 import IOKit.pwr_mgt
+import Sparkle
+import SwiftUI
 
 let kTenBoxVersion: String = {
     Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
 }()
-let kTenBoxCopyright = "Copyright \u{00A9} 2026 terrence@tenclass.com"
-let kTenBoxWebsiteURL = URL(string: "https://tenbox.ai/")!
+let kTenBoxCopyright = "Copyright \u{00A9} 2026 AgentSphere"
+let kTenBoxWebsiteURL = URL(string: "https://agent-sphere.pangustudio.com/")!
 
 final class CheckForUpdatesViewModel: ObservableObject {
     @Published var canCheckForUpdates = false
@@ -34,15 +34,30 @@ struct CheckForUpdatesView: View {
     }
 }
 
+/// SPUUpdaterDelegate：将 appcast URL 指向可配置的 api_host，
+/// 使其不再依赖 Info.plist 中的 SUFeedURL 硬编码值。
+private final class SparkleUpdaterDelegate: NSObject, SPUUpdaterDelegate {
+    /// 由外部注入，返回当前有效的 API host（如 "https://agent-sphere.pangustudio.com"）
+    var apiHostProvider: () -> String = { "https://agent-sphere.pangustudio.com" }
+
+    func feedURLString(for updater: SPUUpdater) -> String? {
+        return apiHostProvider() + "/api/appcast.xml"
+    }
+}
+
 @main
 struct TenBoxApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     private let updaterController: SPUStandardUpdaterController
+    // 持有 delegate，防止被 ARC 释放
+    private let sparkleDelegate = SparkleUpdaterDelegate()
 
     init() {
+        // 在 appDelegate 尚未绑定时，直接从 settings 文件读取 api_host 注入给 Sparkle delegate
+        sparkleDelegate.apiHostProvider = { AppState.loadApiHost() }
         updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
-            updaterDelegate: nil,
+            updaterDelegate: sparkleDelegate,
             userDriverDelegate: nil
         )
         NSApplication.shared.setActivationPolicy(.regular)
@@ -56,13 +71,15 @@ struct TenBoxApp: App {
             return image
         }
         if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
-           let image = NSImage(contentsOf: url) {
+            let image = NSImage(contentsOf: url)
+        {
             image.size = NSSize(width: 256, height: 256)
             return image
         }
         // SwiftPM places .copy resources in Bundle.module
         if let url = Bundle.module.url(forResource: "icon", withExtension: "png"),
-           let image = NSImage(contentsOf: url) {
+            let image = NSImage(contentsOf: url)
+        {
             image.size = NSSize(width: 256, height: 256)
             return image
         }
@@ -71,11 +88,12 @@ struct TenBoxApp: App {
 
     private static func showAboutPanel() {
         let options: [NSApplication.AboutPanelOptionKey: Any] = [
-            .applicationName: "TenBox 本地龙虾",
+            .applicationName: "Agent Sphere",
             .applicationVersion: kTenBoxVersion,
             .version: "",
             .credits: NSAttributedString(
-                string: "A lightweight virtual machine manager for macOS.\n\n\(kTenBoxCopyright)",
+                string:
+                    "A lightweight AI Agent virtual machine manager for macOS.\n\n\(kTenBoxCopyright)",
                 attributes: [
                     .font: NSFont.systemFont(ofSize: 11),
                     .foregroundColor: NSColor.secondaryLabelColor,
@@ -83,7 +101,7 @@ struct TenBoxApp: App {
                         let ps = NSMutableParagraphStyle()
                         ps.alignment = .center
                         return ps
-                    }()
+                    }(),
                 ]
             ),
         ]
@@ -94,44 +112,47 @@ struct TenBoxApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(appDelegate.appState)
+                .environmentObject(appDelegate.appState.oidcService)
                 .frame(minWidth: 800, idealWidth: 1020, minHeight: 480, idealHeight: 600)
         }
         .commands {
             CommandGroup(replacing: .appInfo) {
-                Button("About TenBox") {
+                Button("关于 Agent Sphere") {
                     Self.showAboutPanel()
                 }
                 Divider()
                 CheckForUpdatesView(updater: updaterController.updater)
             }
             CommandGroup(replacing: .newItem) {
-                Button("New VM...") {
+                Button("新建虚拟机...") {
                     appDelegate.appState.showCreateVmDialog = true
                 }
                 .keyboardShortcut("n")
                 Divider()
-                Button("LLM Proxy...") {
+                Button("LLM 代理...") {
                     appDelegate.appState.showLlmProxySheet = true
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             }
-            CommandMenu("VM") {
+            CommandMenu("沙箱") {
                 VmCommandMenuContent(appState: appDelegate.appState)
             }
-            CommandGroup(replacing: .toolbar) { }
-            CommandGroup(replacing: .sidebar) { }
+            CommandGroup(replacing: .toolbar) {}
+            CommandGroup(replacing: .sidebar) {}
             CommandGroup(replacing: .help) {
-                Button("TenBox Website...") {
+                Button("Agent Sphere 网站...") {
                     NSWorkspace.shared.open(kTenBoxWebsiteURL)
                 }
-                Button("Help Documentation...") {
-                    NSWorkspace.shared.open(URL(string: "https://my.feishu.cn/wiki/Q96KwUH1Di3cAik2W7kcQsWKncb")!)
+                Button("帮助文档...") {
+                    NSWorkspace.shared.open(
+                        URL(string: "https://agent-sphere.pangustudio.com/docs/")!)
                 }
             }
         }
     }
 }
 
+@MainActor
 class AppState: ObservableObject {
     @Published var vms: [VmInfo] = []
     @Published var selectedVmId: String?
@@ -147,10 +168,29 @@ class AppState: ObservableObject {
     @Published var hostForwardError: String?
     @Published var llmMappings: [LlmModelMapping] = []
     @Published var llmLoggingEnabled = false
+    @Published var isVmDisplayFullscreen = false
 
+    let oidcService = OidcService()
     let llmProxy = LlmProxyService()
     private static let kLlmGuestIp = "10.0.2.3"
     private static let kLlmGuestPort: UInt16 = 80
+
+    private static let defaultApiHost = "https://agent-sphere.pangustudio.com"
+
+    /// 从 settings.json 读取 api_host，未配置时返回默认值。
+    /// 供 Sparkle delegate 等在 AppState 实例不可用时调用。
+    nonisolated static func loadApiHost() -> String {
+        let paths = NSSearchPathForDirectoriesInDomains(
+            .applicationSupportDirectory, .userDomainMask, true)
+        let dir =
+            (paths.first ?? NSHomeDirectory() + "/Library/Application Support") + "/AgentSphere"
+        let settingsPath = dir + "/settings.json"
+        guard let data = FileManager.default.contents(atPath: settingsPath),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let host = json["api_host"] as? String, !host.isEmpty
+        else { return defaultApiHost }
+        return host
+    }
 
     private var bridge = TenBoxBridgeWrapper()
     let clipboardHandler = ClipboardHandler()
@@ -167,6 +207,8 @@ class AppState: ObservableObject {
         for vm in vms {
             NSLog("[TenBoxApp]   - [%@] \"%@\"", vm.id, vm.name)
         }
+        oidcService.loadStoredToken(oidcIssuer: oidcIssuer)
+        oidcService.refreshUserInfo(cloudUrl: cloudUrl)
         loadLlmMappings()
         startLlmProxyIfNeeded()
         setupClipboard()
@@ -177,7 +219,7 @@ class AppState: ObservableObject {
             guard let self = self else { return }
             self.refreshVmList()
             self.updateSleepAssertion()
-                if let vmId = note.object as? String {
+            if let vmId = note.object as? String {
                 let newState = self.vms.first(where: { $0.id == vmId })?.state ?? .stopped
                 if newState == .rebooting || newState == .stopped || newState == .crashed {
                     self.removeSession(for: vmId)
@@ -203,7 +245,8 @@ class AppState: ObservableObject {
             guard session.connected, session.ipcClient.isConnected else { continue }
             guard session.guestAgentConnected else { continue }
             guard let vm = vms.first(where: { $0.id == vmId }),
-                  vm.state == .running else { continue }
+                vm.state == .running
+            else { continue }
             session.ipcClient.sendSyncTime()
         }
     }
@@ -224,7 +267,7 @@ class AppState: ObservableObject {
 
     deinit {
         clipboardHandler.stopMonitoring()
-        releaseSleepAssertion()
+        MainActor.assumeIsolated { releaseSleepAssertion() }
         if let obs = stateObserver {
             NotificationCenter.default.removeObserver(obs)
         }
@@ -246,7 +289,7 @@ class AppState: ObservableObject {
 
     private func acquireSleepAssertion() {
         guard sleepAssertionID == IOPMAssertionID(0) else { return }
-        let reason = "TenBox VM is running" as CFString
+        let reason = "AgentSphere VM is running" as CFString
         let ret = IOPMAssertionCreateWithName(
             kIOPMAssertPreventUserIdleSystemSleep as CFString,
             IOPMAssertionLevel(kIOPMAssertionLevelOn),
@@ -280,13 +323,15 @@ class AppState: ObservableObject {
             let vm = self.vms.first(where: { $0.id == vmId })
             let mappings = failedPorts.map { hostPort -> String in
                 if let hp = UInt16(hostPort),
-                   let pf = vm?.hostForwards.first(where: { $0.hostPort == hp }) {
+                    let pf = vm?.hostForwards.first(where: { $0.hostPort == hp })
+                {
                     return "\(hp) → \(pf.guestPort)"
                 }
                 return hostPort
             }
             let list = mappings.map { "  • \($0)" }.joined(separator: "\n")
-            self.hostForwardError = "The following host forward(s) failed to bind:\n\(list)\n\nThe host port(s) may already be in use."
+            self.hostForwardError =
+                "The following host forward(s) failed to bind:\n\(list)\n\nThe host port(s) may already be in use."
         }
         sessionCancellables[vmId] = session.objectWillChange
             .receive(on: RunLoop.main)
@@ -320,8 +365,12 @@ class AppState: ObservableObject {
         refreshVmList()
     }
 
-    func editVm(id: String, name: String, memoryMb: Int, cpuCount: Int, netEnabled: Bool, debugMode: Bool) {
-        bridge.editVm(id: id, name: name, memoryMb: memoryMb, cpuCount: cpuCount, netEnabled: netEnabled, debugMode: debugMode)
+    func editVm(
+        id: String, name: String, memoryMb: Int, cpuCount: Int, netEnabled: Bool, debugMode: Bool
+    ) {
+        bridge.editVm(
+            id: id, name: name, memoryMb: memoryMb, cpuCount: cpuCount, netEnabled: netEnabled,
+            debugMode: debugMode)
         refreshVmList()
     }
 
@@ -358,7 +407,8 @@ class AppState: ObservableObject {
             session.connectIfNeeded()
         } else {
             let vmName = vms.first(where: { $0.id == id })?.name ?? id
-            startVmError = "Failed to start VM \"\(vmName)\". The runtime binary may be missing or the VM configuration is invalid."
+            startVmError =
+                "Failed to start VM \"\(vmName)\". The runtime binary may be missing or the VM configuration is invalid."
         }
     }
 
@@ -453,20 +503,65 @@ class AppState: ObservableObject {
         sendNetworkUpdateIfRunning(vmId: vmId)
     }
 
+    // MARK: - Cloud settings
+
+    /// 有效的云端后端 URL（settings.json 可覆盖编译时默认值）
+    var cloudUrl: String {
+        let stored = loadCloudUrl()
+        return stored.isEmpty ? defaultCloudUrl : stored
+    }
+
+    /// OIDC Issuer URL（settings.json 可配置）
+    var oidcIssuer: String {
+        loadOidcIssuer()
+    }
+
+    private let defaultCloudUrl = "https://agent-sphere.pangustudio.com"
+    private let defaultOidcIssuer = "https://account-xc.pangustudio.com"
+    private let defaultApiHost = "https://agent-sphere.pangustudio.com"
+
+    /// 有效的 API host，供镜像源、appcast 等接口使用
+    var effectiveApiHost: String {
+        guard let data = FileManager.default.contents(atPath: settingsPath),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let host = json["api_host"] as? String, !host.isEmpty
+        else { return defaultApiHost }
+        return host
+    }
+
+    private func loadCloudUrl() -> String {
+        guard let data = FileManager.default.contents(atPath: settingsPath),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let url = json["cloud_url"] as? String
+        else { return "" }
+        return url
+    }
+
+    private func loadOidcIssuer() -> String {
+        guard let data = FileManager.default.contents(atPath: settingsPath),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let issuer = json["oidc_issuer"] as? String, !issuer.isEmpty
+        else { return defaultOidcIssuer }
+        return issuer
+    }
+
     // MARK: - LLM Proxy settings
 
     private var settingsPath: String {
-        let paths = NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true)
-        let dir = (paths.first ?? NSHomeDirectory() + "/Library/Application Support") + "/TenBox"
+        let paths = NSSearchPathForDirectoriesInDomains(
+            .applicationSupportDirectory, .userDomainMask, true)
+        let dir =
+            (paths.first ?? NSHomeDirectory() + "/Library/Application Support") + "/AgentSphere"
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         return dir + "/settings.json"
     }
 
     func loadLlmMappings() {
         guard let data = FileManager.default.contents(atPath: settingsPath),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let llmProxy = json["llm_proxy"] as? [String: Any],
-              let mappingsArray = llmProxy["mappings"] as? [[String: Any]] else {
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let llmProxy = json["llm_proxy"] as? [String: Any],
+            let mappingsArray = llmProxy["mappings"] as? [[String: Any]]
+        else {
             llmMappings = []
             return
         }
@@ -486,7 +581,8 @@ class AppState: ObservableObject {
     private func saveLlmMappings() {
         var json: [String: Any] = [:]
         if let data = FileManager.default.contents(atPath: settingsPath),
-           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        {
             json = existing
         }
         let mappingsArray: [[String: Any]] = llmMappings.map { m in
@@ -498,10 +594,11 @@ class AppState: ObservableObject {
                 "api_type": "openai_completions",
             ]
         }
-        json["llm_proxy"] = [
-            "mappings": mappingsArray,
-            "enable_logging": llmLoggingEnabled,
-        ] as [String: Any]
+        json["llm_proxy"] =
+            [
+                "mappings": mappingsArray,
+                "enable_logging": llmLoggingEnabled,
+            ] as [String: Any]
         if let data = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted) {
             try? data.write(to: URL(fileURLWithPath: settingsPath))
         }
@@ -557,7 +654,8 @@ class AppState: ObservableObject {
 
     private func sendSharedFoldersUpdateIfRunning(vmId: String) {
         guard let session = activeSessions[vmId], session.ipcClient.isConnected,
-              let vm = vms.first(where: { $0.id == vmId }) else { return }
+            let vm = vms.first(where: { $0.id == vmId })
+        else { return }
         let entries = vm.sharedFolders.map { f in
             "\(f.tag)|\(f.hostPath)|\(f.readonly ? "1" : "0")"
         }
@@ -566,7 +664,8 @@ class AppState: ObservableObject {
 
     func sendNetworkUpdateIfRunning(vmId: String) {
         guard let session = activeSessions[vmId], session.ipcClient.isConnected,
-              let vm = vms.first(where: { $0.id == vmId }) else { return }
+            let vm = vms.first(where: { $0.id == vmId })
+        else { return }
         let hostfwdEntries = vm.hostForwards.map { pf in
             "tcp:\(pf.effectiveHostIp):\(pf.hostPort)-\(pf.effectiveGuestIp):\(pf.guestPort)"
         }
@@ -585,6 +684,7 @@ class AppState: ObservableObject {
 
 }
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     let appState = AppState()
     private let bridge = TenBoxBridgeWrapper()

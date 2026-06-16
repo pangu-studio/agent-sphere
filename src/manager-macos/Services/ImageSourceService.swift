@@ -1,5 +1,5 @@
-import Foundation
 import CryptoKit
+import Foundation
 
 private let kLastSelectedSourceKey = "lastSelectedSource"
 
@@ -17,8 +17,9 @@ class ImageSourceService: ObservableObject {
     }
 
     private var appSupportDir: String {
-        let paths = NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true)
-        let dir = (paths.first ?? NSHomeDirectory() + "/Library/Application Support") + "/TenBox"
+        let paths = NSSearchPathForDirectoriesInDomains(
+            .applicationSupportDirectory, .userDomainMask, true)
+        let dir = (paths.first ?? NSHomeDirectory() + "/Library/Application Support") + "/AgentSphere"
         try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -29,9 +30,9 @@ class ImageSourceService: ObservableObject {
 
     // MARK: - Default & effective sources
 
-    static func defaultSources() -> [ImageSource] {
+    static func defaultSources(apiHost: String = AppState.loadApiHost()) -> [ImageSource] {
         [
-            ImageSource(name: "China Mainland", url: "https://tenbox.ai/api/images.json"),
+            ImageSource(name: "内部", url: apiHost + "/api/images.json")
         ]
     }
 
@@ -42,15 +43,17 @@ class ImageSourceService: ObservableObject {
 
     private func loadSourcesFromSettings() -> [ImageSource] {
         guard let data = fm.contents(atPath: settingsPath),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let sourcesArray = json["sources"] as? [[String: Any]] else {
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let sourcesArray = json["sources"] as? [[String: Any]]
+        else {
             return []
         }
         var result: [ImageSource] = []
         for item in sourcesArray {
             guard let name = item["name"] as? String,
-                  let url = item["url"] as? String,
-                  !url.isEmpty else { continue }
+                let url = item["url"] as? String,
+                !url.isEmpty
+            else { continue }
             result.append(ImageSource(name: name, url: url))
         }
         return result
@@ -81,9 +84,9 @@ class ImageSourceService: ObservableObject {
     func filterImages(_ images: [ImageEntry], appVersion: String) -> [ImageEntry] {
         let currentPlatform: String = {
             #if arch(arm64)
-            return "arm64"
+                return "arm64"
             #else
-            return "x86_64"
+                return "x86_64"
             #endif
         }()
 
@@ -160,8 +163,10 @@ class ImageSourceService: ObservableObject {
 
     func downloadImage(
         _ entry: ImageEntry,
-        progress: @escaping (_ fileIndex: Int, _ totalFiles: Int, _ fileName: String,
-                             _ downloaded: UInt64, _ total: UInt64) -> Void,
+        progress: @escaping (
+            _ fileIndex: Int, _ totalFiles: Int, _ fileName: String,
+            _ downloaded: UInt64, _ total: UInt64
+        ) -> Void,
         isCancelled: @escaping () -> Bool
     ) async throws {
         let cacheDir = imageCacheDir(for: entry)
@@ -203,7 +208,8 @@ class ImageSourceService: ObservableObject {
 
             if !file.sha256.isEmpty {
                 guard let hash = fileSHA256(tmpPath),
-                      hash.lowercased() == file.sha256.lowercased() else {
+                    hash.lowercased() == file.sha256.lowercased()
+                else {
                     try? fm.removeItem(atPath: tmpPath)
                     throw ImageSourceError.sha256Mismatch(file.name)
                 }
@@ -223,14 +229,16 @@ class ImageSourceService: ObservableObject {
         progress: @escaping (UInt64, UInt64) -> Void,
         isCancelled: @escaping () -> Bool
     ) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Void, Error>) in
             let delegate = DownloadCompletionDelegate(
                 destPath: destPath,
                 progress: progress,
                 isCancelled: isCancelled,
                 continuation: continuation
             )
-            let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+            let session = URLSession(
+                configuration: .default, delegate: delegate, delegateQueue: nil)
             delegate.session = session
             session.downloadTask(with: url).resume()
         }
@@ -260,8 +268,9 @@ class ImageSourceService: ObservableObject {
         for item in items {
             let configPath = (vmsDir as NSString).appendingPathComponent(item + "/config.json")
             guard let data = fm.contents(atPath: configPath),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let name = json["name"] as? String else { continue }
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let name = json["name"] as? String
+            else { continue }
             names.append(name)
         }
         return names
@@ -273,7 +282,8 @@ class ImageSourceService: ObservableObject {
             while parts.count < 3 { parts.append(0) }
             return parts
         }
-        let va = parse(a), vb = parse(b)
+        let va = parse(a)
+        let vb = parse(b)
         for i in 0..<3 {
             if va[i] < vb[i] { return -1 }
             if va[i] > vb[i] { return 1 }
@@ -293,20 +303,24 @@ private class DownloadCompletionDelegate: NSObject, URLSessionDownloadDelegate {
     private var resumed = false
     private var lastProgressTime: CFAbsoluteTime = 0
 
-    init(destPath: String,
-         progress: @escaping (UInt64, UInt64) -> Void,
-         isCancelled: @escaping () -> Bool,
-         continuation: CheckedContinuation<Void, Error>) {
+    init(
+        destPath: String,
+        progress: @escaping (UInt64, UInt64) -> Void,
+        isCancelled: @escaping () -> Bool,
+        continuation: CheckedContinuation<Void, Error>
+    ) {
         self.destPath = destPath
         self.progressCallback = progress
         self.isCancelled = isCancelled
         self.continuation = continuation
     }
 
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
-                    didWriteData bytesWritten: Int64,
-                    totalBytesWritten: Int64,
-                    totalBytesExpectedToWrite: Int64) {
+    func urlSession(
+        _ session: URLSession, downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
         if isCancelled() {
             downloadTask.cancel()
             return
@@ -318,8 +332,10 @@ private class DownloadCompletionDelegate: NSObject, URLSessionDownloadDelegate {
         progressCallback(UInt64(totalBytesWritten), total)
     }
 
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
-                    didFinishDownloadingTo location: URL) {
+    func urlSession(
+        _ session: URLSession, downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
         guard !resumed else { return }
         resumed = true
 
@@ -337,7 +353,8 @@ private class DownloadCompletionDelegate: NSObject, URLSessionDownloadDelegate {
         self.session?.invalidateAndCancel()
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?)
+    {
         guard !resumed else { return }
         resumed = true
         continuation.resume(throwing: error ?? ImageSourceError.downloadFailed("Unknown error"))

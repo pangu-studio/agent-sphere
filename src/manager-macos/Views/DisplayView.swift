@@ -4,6 +4,7 @@ import MetalKit
 struct DisplayView: View {
     @ObservedObject var session: VmSession
     @StateObject private var viewModel = DisplayViewModel()
+    @EnvironmentObject var appState: AppState
 
     private static func updateChromeExtra(viewSize: CGSize) {
         guard viewSize.width > 0 && viewSize.height > 0,
@@ -15,6 +16,9 @@ struct DisplayView: View {
             VmDetailView.chromeExtraH = extraH
         }
     }
+
+    /// Whether currently in macOS native window fullscreen mode
+    @State private var isSystemFullscreen = false
 
     var body: some View {
         GeometryReader { geo in
@@ -49,10 +53,31 @@ struct DisplayView: View {
                     Spacer()
                 }
                 .padding(12)
+
+                // Only show custom VM fullscreen toggle when in macOS native fullscreen
+                if isSystemFullscreen {
+                    HStack {
+                        Spacer()
+                        VStack {
+                            Spacer().frame(height: 56)
+                            FullscreenToggleButton(isFullscreen: appState.isVmDisplayFullscreen) {
+                                toggleFullscreen()
+                            }
+                            Spacer()
+                        }
+                    }
+                }
             }
             .onAppear {
                 session.displayViewSize = geo.size
                 Self.updateChromeExtra(viewSize: geo.size)
+                // Check if window is already in system fullscreen
+                if let window = NSApplication.shared.keyWindow {
+                    isSystemFullscreen = window.styleMask.contains(.fullScreen)
+                }
+            }
+            .onDisappear {
+                isSystemFullscreen = false
             }
             .onChange(of: geo.size, perform: { newSize in
                 session.displayViewSize = newSize
@@ -64,9 +89,130 @@ struct DisplayView: View {
                     }
                 }
             })
+            // Listen for macOS native window fullscreen notifications
+            .onReceive(
+                NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)
+            ) { _ in isSystemFullscreen = true }
+            .onReceive(
+                NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)
+            ) { _ in isSystemFullscreen = false }
+            // Ctrl+Cmd+F shortcut to toggle fullscreen
+            .background(
+                FullscreenKeyHandler {
+                    toggleFullscreen()
+                }
+            )
+        }
+    }
+
+    private func toggleFullscreen() {
+        let entering = !appState.isVmDisplayFullscreen
+        appState.isVmDisplayFullscreen = entering
+
+        guard let window = NSApplication.shared.keyWindow else { return }
+        if entering {
+            // Enter fullscreen: hide title bar, fill entire screen (including menu bar area)
+            window.styleMask.insert(.fullSizeContentView)
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            if let screen = window.screen ?? NSScreen.main {
+                window.setFrame(screen.frame, display: true, animate: false)
+            }
+        } else {
+            // Exit fullscreen: restore title bar style
+            window.titlebarAppearsTransparent = false
+            window.titleVisibility = .visible
+            window.styleMask.remove(.fullSizeContentView)
+            // Resize window to fit VM display after exiting fullscreen
+            if session.displaySize.width > 0 && session.displaySize.height > 0 {
+                VmDetailView.resizeWindowToFitDisplay(
+                    session.displaySize, session: session, isFullscreen: false)
+            }
+        }
+
+        // After changing window style, geo.size may not trigger onChange (system fullscreen
+        // frame is already screen.frame), so actively read content size in next RunLoop cycle.
+        DispatchQueue.main.async {
+            guard let contentSize = NSApplication.shared.keyWindow?.contentView?.bounds.size,
+                  contentSize.width > 0 && contentSize.height > 0 else { return }
+            session.displayViewSize = contentSize
+            Self.updateChromeExtra(viewSize: contentSize)
+            viewModel.notifyDisplaySizeIfNeeded(contentSize, session: session)
         }
     }
 }
+
+// MARK: - Fullscreen toggle helper views
+
+/// Floating button on the right side of the display for toggling VM fullscreen (only visible in native fullscreen)
+private struct FullscreenToggleButton: View {
+    let isFullscreen: Bool
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    private let accentGreen = Color(red: 0.2, green: 1.0, blue: 0.4)
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                if isHovered {
+                    Image(
+                        systemName: isFullscreen
+                            ? "arrow.down.right.and.arrow.up.left"
+                            : "arrow.up.left.and.arrow.down.right"
+                    )
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 52)
+                    .background(Color.black.opacity(0.55))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(accentGreen)
+                        .frame(width: 4, height: 52)
+                }
+            }
+            .frame(width: 36, height: 52)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in isHovered = hovering }
+        .help(isFullscreen ? "Exit Fullscreen (⌃⌘F)" : "Enter Fullscreen (⌃⌘F)")
+        .animation(.easeInOut(duration: 0.18), value: isHovered)
+    }
+}
+
+/// Background view that captures Ctrl+Cmd+F to toggle fullscreen
+private struct FullscreenKeyHandler: NSViewRepresentable {
+    let onToggle: () -> Void
+
+    func makeNSView(context: Context) -> KeyHandlerNSView {
+        let view = KeyHandlerNSView()
+        view.onToggleFullscreen = onToggle
+        return view
+    }
+
+    func updateNSView(_ nsView: KeyHandlerNSView, context: Context) {
+        nsView.onToggleFullscreen = onToggle
+    }
+
+    class KeyHandlerNSView: NSView {
+        var onToggleFullscreen: (() -> Void)?
+
+        override var acceptsFirstResponder: Bool { false }
+
+        override func performKeyEquivalent(with event: NSEvent) -> Bool {
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if flags == [.control, .command], event.keyCode == 3, event.type == .keyDown {
+                onToggleFullscreen?()
+                return true
+            }
+            return false
+        }
+    }
+}
+
+// MARK: - DisplayViewModel
 
 class DisplayViewModel: ObservableObject {
     let inputHandler = InputHandler()
