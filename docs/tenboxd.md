@@ -1,7 +1,7 @@
 # tenboxd — Linux daemon architecture
 
 `tenboxd` is the host-side authority for TenBox on Linux. It owns VM lifecycle,
-persists VM state, spawns and supervises one `tenbox-vm-runtime` process per
+persists VM state, spawns and supervises one `agentsphere-vm-runtime` process per
 running VM, exposes a local CLI RPC socket, and maintains an outbound cloud
 tunnel when cloud registration is enabled.
 
@@ -11,8 +11,8 @@ tunnel when cloud registration is enabled.
 tenboxd
 ├── rpc_server          Unix socket server (one thread per connection)
 │   └── runtime_manager VM process supervisor
-│       ├── tenbox-vm-runtime  [vm-abc ── KVM]
-│       ├── tenbox-vm-runtime  [vm-def ── KVM]
+│       ├── agentsphere-vm-runtime  [vm-abc ── KVM]
+│       ├── agentsphere-vm-runtime  [vm-def ── KVM]
 │       └── ...
 ├── cloud_tunnel        Outbound WSS thread (reconnects on drop)
 │   └── remote_webrtc   WebRTC session per running VM (on demand)

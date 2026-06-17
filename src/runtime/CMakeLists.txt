@@ -11,9 +11,9 @@ if(WIN32)
     )
 endif()
 
-add_executable(tenbox-vm-runtime ${RUNTIME_SOURCES})
+add_executable(agentsphere-vm-runtime ${RUNTIME_SOURCES})
 
-target_include_directories(tenbox-vm-runtime
+target_include_directories(agentsphere-vm-runtime
     PRIVATE
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_BINARY_DIR}
@@ -24,7 +24,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # library references VmPlatform symbols defined in tenbox_platform, which
     # in turn depends on tenbox_core, so wrap the pair in --start-group to
     # allow cross-archive symbol resolution.
-    target_link_libraries(tenbox-vm-runtime
+    target_link_libraries(agentsphere-vm-runtime
         PRIVATE
             -Wl,--start-group
             tenbox_platform
@@ -33,7 +33,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             tenbox_ipc
     )
 else()
-    target_link_libraries(tenbox-vm-runtime
+    target_link_libraries(agentsphere-vm-runtime
         PRIVATE
             tenbox_platform
             tenbox_core
@@ -42,20 +42,20 @@ else()
 endif()
 
 if(WIN32)
-    target_link_libraries(tenbox-vm-runtime PRIVATE ws2_32 dbghelp)
+    target_link_libraries(agentsphere-vm-runtime PRIVATE ws2_32 dbghelp)
 elseif(APPLE)
-    target_link_libraries(tenbox-vm-runtime PRIVATE
+    target_link_libraries(agentsphere-vm-runtime PRIVATE
         "-framework Hypervisor"
         "-framework Foundation"
     )
 
     # Auto-sign with hypervisor entitlement after every build
     set(ENTITLEMENTS_FILE "${CMAKE_SOURCE_DIR}/runtime.entitlements")
-    add_custom_command(TARGET tenbox-vm-runtime POST_BUILD
+    add_custom_command(TARGET agentsphere-vm-runtime POST_BUILD
         COMMAND codesign --force --sign - --entitlements "${ENTITLEMENTS_FILE}"
-                "$<TARGET_FILE:tenbox-vm-runtime>"
-        COMMENT "Signing tenbox-vm-runtime with hypervisor entitlement"
+                "$<TARGET_FILE:agentsphere-vm-runtime>"
+        COMMENT "Signing agentsphere-vm-runtime with hypervisor entitlement"
     )
 elseif(UNIX)
-    target_link_libraries(tenbox-vm-runtime PRIVATE pthread)
+    target_link_libraries(agentsphere-vm-runtime PRIVATE pthread)
 endif()

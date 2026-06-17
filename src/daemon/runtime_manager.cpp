@@ -662,7 +662,7 @@ void RuntimeManager::ReadLogs(std::shared_ptr<RuntimeSession> session) {
     const int exit_status = exited_normally ? WEXITSTATUS(status) : -1;
     const int term_signal = WIFSIGNALED(status) ? WTERMSIG(status) : 0;
 
-    // Exit code 128 from `tenbox-vm-runtime` means the guest issued a reboot
+    // Exit code 128 from `agentsphere-vm-runtime` means the guest issued a reboot
     // (see src/runtime/main.cpp). Re-spawn the runtime in place so the user
     // sees a Rebooting -> Running transition rather than a misleading
     // "Runtime crashed" banner. Don't auto-restart if the user explicitly
@@ -682,11 +682,11 @@ void RuntimeManager::ReadLogs(std::shared_ptr<RuntimeSession> session) {
         session->info.state = VmState::kCrashed;
         std::string detail;
         if (exited_normally) {
-            detail = "tenbox-vm-runtime exited with code " + std::to_string(exit_status);
+            detail = "agentsphere-vm-runtime exited with code " + std::to_string(exit_status);
         } else if (term_signal != 0) {
-            detail = "tenbox-vm-runtime killed by signal " + std::to_string(term_signal);
+            detail = "agentsphere-vm-runtime killed by signal " + std::to_string(term_signal);
         } else {
-            detail = "tenbox-vm-runtime terminated abnormally";
+            detail = "agentsphere-vm-runtime terminated abnormally";
         }
         session->info.last_failure = FailureInfo{
             .code = "runtime_crashed",

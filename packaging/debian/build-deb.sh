@@ -1,5 +1,5 @@
 #!/bin/bash
-# Pack the prebuilt tenbox / tenboxd / tenbox-vm-runtime binaries into a
+# Pack the prebuilt tenbox / tenboxd / agentsphere-vm-runtime binaries into a
 # .deb. Expects the binaries to already exist under <build_dir>/ (i.e.
 # `cmake --build` has run and stripped them); does NOT build anything
 # itself, because the release workflow runs the cmake step inside the
@@ -18,9 +18,9 @@ case "$ARCH" in
     *) echo "build-deb: unsupported arch '$ARCH' (expected amd64 or arm64)" >&2; exit 2 ;;
 esac
 
-if [ ! -x "$BUILD_DIR/tenbox" ] || [ ! -x "$BUILD_DIR/tenboxd" ] || [ ! -x "$BUILD_DIR/tenbox-vm-runtime" ]; then
+if [ ! -x "$BUILD_DIR/tenbox" ] || [ ! -x "$BUILD_DIR/tenboxd" ] || [ ! -x "$BUILD_DIR/agentsphere-vm-runtime" ]; then
     echo "build-deb: required binaries missing under $BUILD_DIR" >&2
-    echo "expected: tenbox, tenboxd, tenbox-vm-runtime" >&2
+    echo "expected: tenbox, tenboxd, agentsphere-vm-runtime" >&2
     exit 2
 fi
 
@@ -45,7 +45,7 @@ mkdir -p "$DEB_ROOT/lib/systemd/system"
 # Drop binaries (already stripped by the workflow's strip step).
 install -m 0755 "$BUILD_DIR/tenbox"            "$DEB_ROOT/usr/local/bin/tenbox"
 install -m 0755 "$BUILD_DIR/tenboxd"           "$DEB_ROOT/usr/local/bin/tenboxd"
-install -m 0755 "$BUILD_DIR/tenbox-vm-runtime" "$DEB_ROOT/usr/local/bin/tenbox-vm-runtime"
+install -m 0755 "$BUILD_DIR/agentsphere-vm-runtime" "$DEB_ROOT/usr/local/bin/agentsphere-vm-runtime"
 
 # systemd unit. Same content the install script previously dropped under
 # /etc/systemd/system; moving it into the deb means upgrades pick up unit

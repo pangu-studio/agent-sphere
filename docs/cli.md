@@ -64,16 +64,16 @@ tenbox <command> [options]
 
 ---
 
-## `tenbox-vm-runtime` — direct runtime CLI
+## `agentsphere-vm-runtime` — direct runtime CLI
 
 The runtime is normally launched by `tenboxd` (or by the GUI manager on
 Windows/macOS). It can also be invoked directly for development and debugging.
 
-On Windows the binary is `tenbox-vm-runtime.exe`; on macOS and Linux it is
-`tenbox-vm-runtime`.
+On Windows the binary is `agentsphere-vm-runtime.exe`; on macOS and Linux it is
+`agentsphere-vm-runtime`.
 
 ```
-tenbox-vm-runtime --kernel <path> [options]
+agentsphere-vm-runtime --kernel <path> [options]
 ```
 
 ### Options

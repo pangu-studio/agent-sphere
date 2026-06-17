@@ -40,6 +40,7 @@ BUILD_DIR="$ROOT_DIR/build"
 MANAGER_SRC="$ROOT_DIR/src/manager-macos"
 PLIST="$MANAGER_SRC/Resources/Info.plist"
 ENTITLEMENTS="$MANAGER_SRC/Resources/AgentSphere.entitlements"
+RUNTIME_ENTITLEMENTS="$ROOT_DIR/runtime.entitlements"
 TARGET_ARCHS="arm64 x86_64"
 
 echo "===================================="
@@ -116,8 +117,8 @@ echo ""
 
 CMAKE_DIR="$BUILD_DIR/cmake-$ARCH"
 
-# ── Step 1: Build tenbox-vm-runtime (C++ via CMake) ──────────────────────
-echo "[$ARCH 1/2] Building tenbox-vm-runtime..."
+# ── Step 1: Build agentsphere-vm-runtime (C++ via CMake) ──────────────────────
+echo "[$ARCH 1/2] Building agentsphere-vm-runtime..."
 mkdir -p "$CMAKE_DIR"
 cd "$CMAKE_DIR"
 
@@ -125,13 +126,13 @@ cmake "$ROOT_DIR" \
     -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
     -DCMAKE_OSX_ARCHITECTURES="$ARCH"
 
-cmake --build . --target tenbox-vm-runtime -j"$CPU_COUNT"
+cmake --build . --target agentsphere-vm-runtime -j"$CPU_COUNT"
 
-if [ ! -f "$CMAKE_DIR/tenbox-vm-runtime" ]; then
-    echo "Error: tenbox-vm-runtime binary not found after build."
+if [ ! -f "$CMAKE_DIR/agentsphere-vm-runtime" ]; then
+    echo "Error: agentsphere-vm-runtime binary not found after build."
     exit 1
 fi
-echo "  -> $CMAKE_DIR/tenbox-vm-runtime"
+echo "  -> $CMAKE_DIR/agentsphere-vm-runtime"
 
 # ── Step 2: Build AgentSphereManager (Swift/Obj-C++ via SPM) ─────────────────
 echo ""
@@ -173,16 +174,15 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
-# Merge tenbox-vm-runtime
-echo "Merging tenbox-vm-runtime (arm64 + x86_64)..."
+# Merge agentsphere-vm-runtime
+echo "Merging agentsphere-vm-runtime (arm64 + x86_64)..."
 lipo -create \
-    "$BUILD_DIR/cmake-arm64/tenbox-vm-runtime" \
-    "$BUILD_DIR/cmake-x86_64/tenbox-vm-runtime" \
-    -output "$APP_DIR/Contents/MacOS/tenbox-vm-runtime"
-echo "  -> $(lipo -archs "$APP_DIR/Contents/MacOS/tenbox-vm-runtime")"
+    "$BUILD_DIR/cmake-arm64/agentsphere-vm-runtime" \
+    "$BUILD_DIR/cmake-x86_64/agentsphere-vm-runtime" \
+    -output "$APP_DIR/Contents/MacOS/agentsphere-vm-runtime"
+echo "  -> $(lipo -archs "$APP_DIR/Contents/MacOS/agentsphere-vm-runtime")"
 
-codesign --force --sign - --entitlements "$ENTITLEMENTS" "$APP_DIR/Contents/MacOS/tenbox-vm-runtime"
-echo "  -> codesign applied (ad-hoc + Hypervisor entitlement)"
+# Signed later, inside-out, in the dedicated signing stage (with runtime.entitlements).
 
 # Merge AgentSphereManager
 echo ""
@@ -230,30 +230,61 @@ SPARKLE_FRAMEWORK=$(find -L "$SPM_SCRATCH_REF/artifacts" -name "Sparkle.framewor
 if [ -n "$SPARKLE_FRAMEWORK" ] && [ -d "$SPARKLE_FRAMEWORK" ]; then
     mkdir -p "$APP_DIR/Contents/Frameworks"
     cp -R "$SPARKLE_FRAMEWORK" "$APP_DIR/Contents/Frameworks/"
-    # Strip Sparkle's original code signature so it gets re-signed with our identity
-    # (avoids "different Team IDs" error with hardened runtime library validation)
-    codesign --remove-signature "$APP_DIR/Contents/Frameworks/Sparkle.framework" 2>/dev/null || true
-    echo "  -> Copied Sparkle.framework (signature stripped)"
 fi
 
 install_name_tool -add_rpath "@loader_path/../Frameworks" \
     "$APP_DIR/Contents/MacOS/AgentSphereManager" 2>/dev/null || true
 
-# ── Sign the universal app bundle ────────────────────────────────────────────
+# ── Sign the universal app bundle (inside-out, per-component entitlements) ────
 
 echo ""
 echo "Signing Agent Sphere.app (universal)..."
 if [ "$CODESIGN_IDENTITY" != "-" ]; then
     echo "  Using: $CODESIGN_IDENTITY"
-    codesign --deep --force --options runtime \
-        --entitlements "$ENTITLEMENTS" \
-        --sign "$CODESIGN_IDENTITY" "$APP_DIR"
 else
     echo "  Using: ad-hoc (no Developer ID found)"
-    codesign --deep --force --options runtime \
-        --entitlements "$ENTITLEMENTS" \
-        --sign - "$APP_DIR"
 fi
+
+# codesign refuses to sign files carrying Finder metadata (com.apple.FinderInfo /
+# com.apple.macl). Source assets such as icon.png can pick these up and get copied
+# into the bundle; strip every extended attribute from the staged app before signing.
+xattr -cr "$APP_DIR"
+
+# Sign from the inside out so nested code is sealed before its container, giving
+# each component only the entitlements it needs. (Replaces the deprecated --deep,
+# which would stamp the app's Hypervisor entitlement onto Sparkle as well.)
+
+# 1) Sparkle.framework — a framework must not carry app entitlements.
+SPARKLE_FW="$APP_DIR/Contents/Frameworks/Sparkle.framework"
+if [ -d "$SPARKLE_FW" ]; then
+    for nested in \
+        "$SPARKLE_FW/Versions/Current/Autoupdate" \
+        "$SPARKLE_FW/Versions/Current/Updater.app" \
+        "$SPARKLE_FW/Versions/Current/XPCServices/"*.xpc; do
+        if [ -e "$nested" ]; then
+            codesign --force --options runtime --sign "$CODESIGN_IDENTITY" "$nested"
+        fi
+    done
+    codesign --force --options runtime --sign "$CODESIGN_IDENTITY" "$SPARKLE_FW"
+fi
+
+# 2) agentsphere-vm-runtime — needs the Hypervisor entitlement only.
+codesign --force --options runtime \
+    --entitlements "$RUNTIME_ENTITLEMENTS" \
+    --sign "$CODESIGN_IDENTITY" "$APP_DIR/Contents/MacOS/agentsphere-vm-runtime"
+
+# 3) AgentSphereManager — the main executable, full app entitlements.
+codesign --force --options runtime \
+    --entitlements "$ENTITLEMENTS" \
+    --sign "$CODESIGN_IDENTITY" "$APP_DIR/Contents/MacOS/AgentSphereManager"
+
+# 4) Outer bundle — seals everything, app entitlements.
+codesign --force --options runtime \
+    --entitlements "$ENTITLEMENTS" \
+    --sign "$CODESIGN_IDENTITY" "$APP_DIR"
+
+# Fail the build early if the result is not a valid, self-consistent signature.
+codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 
 echo "  -> $APP_DIR"
 

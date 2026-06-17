@@ -49,9 +49,9 @@ clients. TenBox's equivalent is `tenboxd` + thin clients.
 │    ├─ Local RPC:  Unix socket (trusted local clients)           │
 │    ├─ Remote RPC: HTTPS + WebSocket (TLS + token auth)          │
 │    ├─ Embedded static web UI                                    │
-│    └─ Spawns `tenbox-vm-runtime` processes (one per VM)         │
+│    └─ Spawns `agentsphere-vm-runtime` processes (one per VM)         │
 │                                                                 │
-│   tenbox-vm-runtime (per VM, unchanged IPC back to tenboxd)     │
+│   agentsphere-vm-runtime (per VM, unchanged IPC back to tenboxd)     │
 └────────────────────────────────┬────────────────────────────────┘
                                  │ TLS + token
                                  │ (routed via LAN / Tailscale / WG)
@@ -67,7 +67,7 @@ clients. TenBox's equivalent is `tenboxd` + thin clients.
 
 - `tenboxd` owns VM state, persists `vm.json`, spawns runtimes, holds shared
 memory framebuffers, proxies LLM traffic, and exposes the RPC surface.
-- `tenbox-vm-runtime` is unchanged — it still talks to its parent over the
+- `agentsphere-vm-runtime` is unchanged — it still talks to its parent over the
 existing `protocol_v1` IPC (Unix socket on Linux/macOS, named pipe on
 Windows).
 - Clients never talk to runtimes directly. Everything flows through `tenboxd`.
@@ -440,7 +440,7 @@ tools.
 | TenBox component                                  | VMware analogue          | libvirt-world analogue              |
 | ------------------------------------------------- | ------------------------ | ----------------------------------- |
 | `tenboxd` (headless daemon)                       | ESXi `hostd`             | `libvirtd`                          |
-| `tenbox-vm-runtime` (one per VM)                  | VMX process              | per-VM `qemu-system-`*              |
+| `agentsphere-vm-runtime` (one per VM)                  | VMX process              | per-VM `qemu-system-`*              |
 | HTTPS + token RPC, Unix socket locally            | vSphere API over HTTPS   | `qemu:///system` + `qemu+tls://...` |
 | Embedded Web UI                                   | ESXi Host Client (HTML5) | Cockpit VMs module / Kimchi         |
 | Desktop manager as thin client                    | vSphere Client           | virt-manager                        |

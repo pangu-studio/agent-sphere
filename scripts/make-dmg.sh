@@ -15,7 +15,7 @@
 # The script creates a DMG with:
 #   - Agent Sphere.app
 #   - A symlink to /Applications for drag-and-drop install
-#   - tenbox-vm-runtime bundled inside the .app
+#   - agentsphere-vm-runtime bundled inside the .app
 
 set -e
 

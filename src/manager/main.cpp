@@ -67,15 +67,15 @@ static std::string ResolveDefaultRuntimeExePath() {
     wchar_t self[MAX_PATH]{};
     DWORD len = GetModuleFileNameW(nullptr, self, MAX_PATH);
     if (len == 0 || len >= MAX_PATH) {
-        return "tenbox-vm-runtime.exe";
+        return "agentsphere-vm-runtime.exe";
     }
     std::string path = i18n::wide_to_utf8(self);
     size_t sep = path.find_last_of("\\/");
     if (sep == std::string::npos) {
-        return "tenbox-vm-runtime.exe";
+        return "agentsphere-vm-runtime.exe";
     }
     path.resize(sep + 1);
-    path += "tenbox-vm-runtime.exe";
+    path += "agentsphere-vm-runtime.exe";
     return path;
 }
 

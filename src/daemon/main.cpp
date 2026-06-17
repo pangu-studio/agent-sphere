@@ -25,7 +25,7 @@ void PrintUsage(const char* prog) {
         << "Options:\n"
         << "  --data-dir <path>      Override data directory for development/testing\n"
         << "  --socket <path>        Override Unix socket path for development/testing\n"
-        << "  --runtime <path>       Override path to the tenbox-vm-runtime binary\n"
+        << "  --runtime <path>       Override path to the agentsphere-vm-runtime binary\n"
         << "  --cloud-url <url>      Cloud tunnel WS/WSS URL (default: " << kDefaultCloudUrl << ")\n"
         << "                         Also reads TENBOX_CLOUD_URL when --cloud-url is omitted.\n"
         << "                         Pass an empty value to disable cloud connectivity.\n"
@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
     config.data_dir = tenbox::daemon::DefaultDataDir();
     config.socket_path = tenbox::daemon::DefaultSocketPath();
     config.runtime_path = (std::filesystem::absolute(argv[0]).parent_path() /
-                           "tenbox-vm-runtime").string();
+                           "agentsphere-vm-runtime").string();
     if (const char* env = std::getenv("TENBOX_CLOUD_URL")) {
         config.cloud_url = env;
     } else {

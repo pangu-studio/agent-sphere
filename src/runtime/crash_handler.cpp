@@ -252,7 +252,7 @@ LONG WINAPI TopLevelFilter(EXCEPTION_POINTERS* ep) {
         WriteMetaFile(stamp, ep, guest_tail);
 
         // Also write a line to stderr so it shows up in runtime.log.
-        std::fprintf(stderr, "\n[FATAL] tenbox-vm-runtime crashed: code=0x%08lx "
+        std::fprintf(stderr, "\n[FATAL] agentsphere-vm-runtime crashed: code=0x%08lx "
                              "dump=%s\n",
                      ep && ep->ExceptionRecord ? ep->ExceptionRecord->ExceptionCode : 0ul,
                      dump_path.c_str());
@@ -357,7 +357,7 @@ void SignalHandler(int signo, siginfo_t* info, void* /*ucontext*/) {
     WriteMetaFilePosix(stamp, signo, info ? info->si_addr : nullptr, guest_tail);
 
     std::fprintf(stderr,
-                 "\n[FATAL] tenbox-vm-runtime crashed: signal=%d trace=%s\n",
+                 "\n[FATAL] agentsphere-vm-runtime crashed: signal=%d trace=%s\n",
                  signo, trace_path.c_str());
     std::fflush(stderr);
 

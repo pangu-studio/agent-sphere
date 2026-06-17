@@ -185,16 +185,16 @@ class VmProcessManager {
         let fm = FileManager.default
         if let exePath = Bundle.main.executablePath {
             let exeDir = (exePath as NSString).deletingLastPathComponent
-            let beside = (exeDir as NSString).appendingPathComponent("tenbox-vm-runtime")
+            let beside = (exeDir as NSString).appendingPathComponent("agentsphere-vm-runtime")
             if fm.fileExists(atPath: beside) { return beside }
 
             var searchDir = (exeDir as NSString).deletingLastPathComponent
             while (searchDir as NSString).pathComponents.count > 1 {
-                let candidate = (searchDir as NSString).appendingPathComponent("build/tenbox-vm-runtime")
+                let candidate = (searchDir as NSString).appendingPathComponent("build/agentsphere-vm-runtime")
                 if fm.fileExists(atPath: candidate) { return candidate }
                 searchDir = (searchDir as NSString).deletingLastPathComponent
             }
         }
-        return "tenbox-vm-runtime"
+        return "agentsphere-vm-runtime"
     }
 }

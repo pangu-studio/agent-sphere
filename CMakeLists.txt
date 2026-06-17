@@ -22,7 +22,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 
 # Release builds on Linux statically link the C++ runtime so the
-# resulting tenbox / tenboxd / tenbox-vm-runtime binaries don't
+# resulting tenbox / tenboxd / agentsphere-vm-runtime binaries don't
 # DT_NEEDED libstdc++.so.6 / libgcc_s.so.1. Combined with the static
 # OpenSSL/ffmpeg/etc. that packaging/build-base/Dockerfile.bullseye
 # bakes in, this lets a single deb run on every Debian-derived

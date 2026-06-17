@@ -4,7 +4,7 @@
 
 Cross-platform VMM for running AI agents in isolated Linux VMs.
 
-- **Windows / macOS**: native GUI manager (`tenbox-manager.exe` / `TenBox.app`) launches per-VM `tenbox-vm-runtime` processes.
+- **Windows / macOS**: native GUI manager (`tenbox-manager.exe` / `TenBox.app`) launches per-VM `agentsphere-vm-runtime` processes.
 - **Linux**: `tenboxd` daemon manages VM lifecycle, exposes a local `tenbox` CLI, and provides optional browser-based remote desktop via WebRTC.
 
 All platforms share `src/core/` (VMM engine), `src/platform/` (hypervisor backends), `src/ipc/` (manager↔runtime protocol), and `src/runtime/` (the runtime process). Linux adds `src/daemon/`, `src/cli/`, and `src/client/`.
@@ -17,7 +17,7 @@ src/
 ├── core/           VMM engine — arch/ device/ disk/ net/ vmm/ vdagent/ guest_agent/
 ├── platform/       Hypervisor backends — windows/ (WHVP), macos/ (HVF), linux/ (KVM), posix/
 ├── ipc/            Manager↔runtime protocol v1 + POSIX Unix socket transport
-├── runtime/        tenbox-vm-runtime process (all platforms)
+├── runtime/        agentsphere-vm-runtime process (all platforms)
 ├── daemon/         tenboxd (Linux only)
 │   ├── main.cpp            Entry point, CLI flags, startup sequence
 │   ├── vm_store.cpp        VM registry (vm.json persistence)
@@ -74,9 +74,9 @@ Linux:    browser/CLI ──► tenboxd (Unix socket / WSS → my.tenbox.ai)
                                   │
                     ┌─────────────┴─────────────┐
                     ▼                           ▼
-          tenbox-vm-runtime [KVM]    tenbox-vm-runtime [KVM]
+          agentsphere-vm-runtime [KVM]    agentsphere-vm-runtime [KVM]
 
-Win/macOS: tenbox-manager ──IPC v1──► tenbox-vm-runtime (WHVP / HVF)
+Win/macOS: tenbox-manager ──IPC v1──► agentsphere-vm-runtime (WHVP / HVF)
            Named Pipe (Win) / Unix socket (macOS)
 ```
 
