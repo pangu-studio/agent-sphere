@@ -37,9 +37,20 @@ struct VmListView: View {
 
 private struct UserInfoFooter: View {
     @ObservedObject var oidcService: OidcService
+    @EnvironmentObject var appState: AppState
     @State private var showLogoutConfirm = false
 
     var body: some View {
+        if oidcService.isAuthenticated {
+            authenticatedFooter
+        } else {
+            loginFooter
+        }
+    }
+
+    // MARK: - 已登录状态
+
+    private var authenticatedFooter: some View {
         HStack(spacing: 10) {
             // 头像占位（首字母）
             ZStack {
@@ -77,6 +88,46 @@ private struct UserInfoFooter: View {
                     oidcService.logout()
                 }
                 Button("取消", role: .cancel) {}
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(.bar)
+    }
+
+    // MARK: - 未登录状态
+
+    private var loginFooter: some View {
+        VStack(spacing: 8) {
+            if let error = oidcService.loginError {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .padding(.horizontal, 8)
+            }
+
+            if oidcService.isLoading {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Waiting for browser…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Button {
+                    oidcService.login(
+                        cloudUrl: appState.cloudUrl,
+                        oidcIssuer: appState.oidcIssuer
+                    )
+                } label: {
+                    Label("登录", systemImage: "person.badge.key.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(appState.cloudUrl.isEmpty || appState.oidcIssuer.isEmpty)
             }
         }
         .padding(.horizontal, 12)

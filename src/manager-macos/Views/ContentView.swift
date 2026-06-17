@@ -10,14 +10,10 @@ struct ContentView: View {
     }
 
     var body: some View {
-        if oidcService.isAuthenticated {
-            authenticatedView
-        } else {
-            LoginView(cloudUrl: appState.cloudUrl, oidcIssuer: appState.oidcIssuer)
-        }
+        mainView
     }
 
-    private var authenticatedView: some View {
+    private var mainView: some View {
         Group {
             if appState.isVmDisplayFullscreen {
                 fullscreenView
