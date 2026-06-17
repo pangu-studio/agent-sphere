@@ -3,7 +3,7 @@ Version: @VERSION@
 Section: admin
 Priority: optional
 Architecture: @ARCH@
-Maintainer: Terrence <terrence@tenclass.com>
+Maintainer: as.nssai.com <contact@nssai.com>
 Homepage: https://tenbox.ai
 Pre-Depends: adduser
 Depends: libc6 (>= 2.31),
