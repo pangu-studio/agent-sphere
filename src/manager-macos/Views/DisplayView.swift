@@ -168,9 +168,9 @@ private struct FullscreenToggleButton: View {
                     .background(Color.black.opacity(0.55))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 } else {
-                    RoundedRectangle(cornerRadius: 2)
+                    RoundedRectangle(cornerRadius: 1.5)
                         .fill(accentGreen)
-                        .frame(width: 4, height: 52)
+                        .frame(width: 3, height: 40)
                 }
             }
             .frame(width: 36, height: 52)

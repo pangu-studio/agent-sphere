@@ -139,11 +139,26 @@ echo ""
 echo "[$ARCH 2/2] Building AgentSphereManager via SPM ($SWIFT_CONFIG, $ARCH)..."
 
 cd "$MANAGER_SRC"
-if [ -d "$MANAGER_SRC/.build" ]; then
-    chmod -R u+rwx "$MANAGER_SRC/.build" 2>/dev/null || true
-    rm -rf "$MANAGER_SRC/.build" 2>/dev/null || true
-fi
-SPM_SCRATCH="$MANAGER_SRC/.build-$ARCH"
+# IMPORTANT: keep the SPM scratch dir OUTSIDE the package directory.
+# SwiftPM watches the package root as a directory-structure node and only
+# excludes ".git"/".build" from it — a custom --scratch-path placed inside the
+# package (e.g. ".build-arm64") is NOT excluded, so build products churn the
+# watched tree, invalidate the BuildDescription mid-run, and produce
+# "unknown build description" / "failed to write auxiliary file" errors.
+# Putting scratch under build/ (outside manager-macos/) keeps it unwatched.
+SPM_SCRATCH="$BUILD_DIR/spm-$ARCH"
+# Purge any legacy in-package scratch dirs from older builds (they poison the
+# directory-structure watcher even when no longer used as scratch-path).
+for STALE in "$MANAGER_SRC/.build" "$MANAGER_SRC/.build-$ARCH"; do
+    if [ -e "$STALE" ]; then
+        chmod -R u+rwx "$STALE" 2>/dev/null || true
+        rm -rf "$STALE" 2>/dev/null || true
+    fi
+done
+# Start each build from a clean scratch so the release.yaml / description.json /
+# build.db triple can never be left in a desynced state by a partial cleanup.
+chmod -R u+rwx "$SPM_SCRATCH" 2>/dev/null || true
+rm -rf "$SPM_SCRATCH"
 if ! swift build -c "$SWIFT_CONFIG" --arch "$ARCH" --scratch-path "$SPM_SCRATCH"; then
     echo "  -> SPM build failed, resetting scratch directory and retrying..."
     chmod -R u+rwx "$SPM_SCRATCH" 2>/dev/null || true
@@ -187,8 +202,8 @@ echo "  -> $(lipo -archs "$APP_DIR/Contents/MacOS/agentsphere-vm-runtime")"
 # Merge AgentSphereManager
 echo ""
 echo "Merging AgentSphereManager (arm64 + x86_64)..."
-SPM_ARM64="$MANAGER_SRC/.build-arm64/arm64-apple-macosx/$SWIFT_CONFIG"
-SPM_X86="$MANAGER_SRC/.build-x86_64/x86_64-apple-macosx/$SWIFT_CONFIG"
+SPM_ARM64="$BUILD_DIR/spm-arm64/arm64-apple-macosx/$SWIFT_CONFIG"
+SPM_X86="$BUILD_DIR/spm-x86_64/x86_64-apple-macosx/$SWIFT_CONFIG"
 lipo -create \
     "$SPM_ARM64/AgentSphereManager" \
     "$SPM_X86/AgentSphereManager" \
@@ -225,7 +240,7 @@ elif [ -f "$METAL_SRC" ]; then
 fi
 
 # Copy Sparkle framework from SPM build artifacts (universal xcframework)
-SPM_SCRATCH_REF="$MANAGER_SRC/.build-arm64"
+SPM_SCRATCH_REF="$BUILD_DIR/spm-arm64"
 SPARKLE_FRAMEWORK=$(find -L "$SPM_SCRATCH_REF/artifacts" -name "Sparkle.framework" -type d 2>/dev/null | head -1)
 if [ -n "$SPARKLE_FRAMEWORK" ] && [ -d "$SPARKLE_FRAMEWORK" ]; then
     mkdir -p "$APP_DIR/Contents/Frameworks"
