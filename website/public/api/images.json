@@ -13,19 +13,19 @@
       "files": [
         {
           "name": "vmlinuz",
-          "url": "https://files.xiaozhi.me/tenbox/images/kernel/vmlinuz",
+          "url": "https://ass.lxy.app/agentsphere/images/kernel/vmlinuz",
           "sha256": "",
           "size": 12109760
         },
         {
           "name": "initrd.gz",
-          "url": "https://files.xiaozhi.me/tenbox/images/initramfs/initramfs-x86_64.cpio.gz",
+          "url": "https://ass.lxy.app/agentsphere/images/initramfs/initramfs-x86_64.cpio.gz",
           "sha256": "",
           "size": 4377430
         },
         {
           "name": "rootfs.qcow2",
-          "url": "https://files.xiaozhi.me/tenbox/images/openclaw/rootfs-openclaw-2026.6.1-x86_64.qcow2",
+          "url": "https://ass.lxy.app/agentsphere/images/openclaw/rootfs-openclaw-2026.6.1-x86_64.qcow2",
           "sha256": "",
           "size": 1631059968
         }
@@ -44,19 +44,19 @@
       "files": [
         {
           "name": "vmlinuz",
-          "url": "https://files.xiaozhi.me/tenbox/images/kernel/vmlinuz",
+          "url": "https://ass.lxy.app/agentsphere/images/kernel/vmlinuz",
           "sha256": "",
           "size": 12109760
         },
         {
           "name": "initrd.gz",
-          "url": "https://files.xiaozhi.me/tenbox/images/initramfs/initramfs-x86_64.cpio.gz",
+          "url": "https://ass.lxy.app/agentsphere/images/initramfs/initramfs-x86_64.cpio.gz",
           "sha256": "",
           "size": 4377430
         },
         {
           "name": "rootfs.qcow2",
-          "url": "https://files.xiaozhi.me/tenbox/images/qwenpaw/rootfs-qwenpaw-1.1.11b1-x86_64.qcow2",
+          "url": "https://ass.lxy.app/agentsphere/images/qwenpaw/rootfs-qwenpaw-1.1.11b1-x86_64.qcow2",
           "sha256": "",
           "size": 1894187008
         }
@@ -75,19 +75,19 @@
       "files": [
         {
           "name": "vmlinuz",
-          "url": "https://files.xiaozhi.me/tenbox/images/kernel/vmlinuz",
+          "url": "https://ass.lxy.app/agentsphere/images/kernel/vmlinuz",
           "sha256": "",
           "size": 12109760
         },
         {
           "name": "initrd.gz",
-          "url": "https://files.xiaozhi.me/tenbox/images/initramfs/initramfs-x86_64.cpio.gz",
+          "url": "https://ass.lxy.app/agentsphere/images/initramfs/initramfs-x86_64.cpio.gz",
           "sha256": "",
           "size": 4377430
         },
         {
           "name": "rootfs.qcow2",
-          "url": "https://files.xiaozhi.me/tenbox/images/chromium/rootfs-chromium-x86_64.qcow2",
+          "url": "https://ass.lxy.app/agentsphere/images/chromium/rootfs-chromium-x86_64.qcow2",
           "sha256": "",
           "size": 1330053120
         }
@@ -106,19 +106,19 @@
       "files": [
         {
           "name": "vmlinuz",
-          "url": "https://files.xiaozhi.me/tenbox/images/kernel-arm64/Image-arm64",
+          "url": "https://ass.lxy.app/agentsphere/images/kernel-arm64/Image-arm64",
           "sha256": "",
           "size": 37660608
         },
         {
           "name": "initrd.gz",
-          "url": "https://files.xiaozhi.me/tenbox/images/initramfs-arm64/initramfs-arm64.cpio.gz",
+          "url": "https://ass.lxy.app/agentsphere/images/initramfs-arm64/initramfs-arm64.cpio.gz",
           "sha256": "",
           "size": 4006108
         },
         {
           "name": "rootfs.qcow2",
-          "url": "https://files.xiaozhi.me/tenbox/images/chromium-arm64/rootfs-chromium-arm64.qcow2",
+          "url": "https://ass.lxy.app/agentsphere/images/chromium-arm64/rootfs-chromium-arm64.qcow2",
           "sha256": "",
           "size": 1320300032
         }
@@ -137,19 +137,19 @@
       "files": [
         {
           "name": "vmlinuz",
-          "url": "https://files.xiaozhi.me/tenbox/images/kernel-arm64/Image-arm64",
+          "url": "https://ass.lxy.app/agentsphere/images/kernel-arm64/Image-arm64",
           "sha256": "",
           "size": 37660608
         },
         {
           "name": "initrd.gz",
-          "url": "https://files.xiaozhi.me/tenbox/images/initramfs-arm64/initramfs-arm64.cpio.gz",
+          "url": "https://ass.lxy.app/agentsphere/images/initramfs-arm64/initramfs-arm64.cpio.gz",
           "sha256": "",
           "size": 4006108
         },
         {
           "name": "rootfs.qcow2",
-          "url": "https://files.xiaozhi.me/tenbox/images/qwenpaw-arm64/rootfs-qwenpaw-1.1.11b1-arm64.qcow2",
+          "url": "https://ass.lxy.app/agentsphere/images/qwenpaw-arm64/rootfs-qwenpaw-1.1.11b1-arm64.qcow2",
           "sha256": "",
           "size": 1843200000
         }
@@ -168,19 +168,19 @@
       "files": [
         {
           "name": "vmlinuz",
-          "url": "https://files.xiaozhi.me/tenbox/images/kernel-arm64/Image-arm64",
+          "url": "https://ass.lxy.app/agentsphere/images/kernel-arm64/Image-arm64",
           "sha256": "",
           "size": 37660608
         },
         {
           "name": "initrd.gz",
-          "url": "https://files.xiaozhi.me/tenbox/images/initramfs-arm64/initramfs-arm64.cpio.gz",
+          "url": "https://ass.lxy.app/agentsphere/images/initramfs-arm64/initramfs-arm64.cpio.gz",
           "sha256": "",
           "size": 4006108
         },
         {
           "name": "rootfs.qcow2",
-          "url": "https://files.xiaozhi.me/tenbox/images/openclaw-arm64/rootfs-openclaw-2026.6.1-arm64.qcow2",
+          "url": "https://ass.lxy.app/agentsphere/images/openclaw-arm64/rootfs-openclaw-2026.6.1-arm64.qcow2",
           "sha256": "",
           "size": 1631584256
         }
@@ -199,19 +199,19 @@
       "files": [
         {
           "name": "vmlinuz",
-          "url": "https://files.xiaozhi.me/tenbox/images/kernel/vmlinuz",
+          "url": "https://ass.lxy.app/agentsphere/images/kernel/vmlinuz",
           "sha256": "",
           "size": 12109760
         },
         {
           "name": "initrd.gz",
-          "url": "https://files.xiaozhi.me/tenbox/images/initramfs/initramfs-x86_64.cpio.gz",
+          "url": "https://ass.lxy.app/agentsphere/images/initramfs/initramfs-x86_64.cpio.gz",
           "sha256": "",
           "size": 4377430
         },
         {
           "name": "rootfs.qcow2",
-          "url": "https://files.xiaozhi.me/tenbox/images/hermes/rootfs-hermes-0.16.0-x86_64.qcow2",
+          "url": "https://ass.lxy.app/agentsphere/images/hermes/rootfs-hermes-0.16.0-x86_64.qcow2",
           "sha256": "",
           "size": 2061041664
         }
@@ -230,19 +230,19 @@
       "files": [
         {
           "name": "vmlinuz",
-          "url": "https://files.xiaozhi.me/tenbox/images/kernel-arm64/Image-arm64",
+          "url": "https://ass.lxy.app/agentsphere/images/kernel-arm64/Image-arm64",
           "sha256": "",
           "size": 37660608
         },
         {
           "name": "initrd.gz",
-          "url": "https://files.xiaozhi.me/tenbox/images/initramfs-arm64/initramfs-arm64.cpio.gz",
+          "url": "https://ass.lxy.app/agentsphere/images/initramfs-arm64/initramfs-arm64.cpio.gz",
           "sha256": "",
           "size": 4006108
         },
         {
           "name": "rootfs.qcow2",
-          "url": "https://files.xiaozhi.me/tenbox/images/hermes-arm64/rootfs-hermes-0.16.0-arm64.qcow2",
+          "url": "https://ass.lxy.app/agentsphere/images/hermes-arm64/rootfs-hermes-0.16.0-arm64.qcow2",
           "sha256": "",
           "size": 2029889536
         }
