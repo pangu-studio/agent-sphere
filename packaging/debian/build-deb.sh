@@ -1,5 +1,6 @@
 #!/bin/bash
-# Pack the prebuilt tenbox / agentsphered / agentsphere-vm-runtime binaries into a
+
+# Pack the prebuilt agentsphere / agentsphered / agentsphere-vm-runtime binaries into a
 # .deb. Expects the binaries to already exist under <build_dir>/ (i.e.
 # `cmake --build` has run and stripped them); does NOT build anything
 # itself, because the release workflow runs the cmake step inside the
@@ -18,9 +19,9 @@ case "$ARCH" in
     *) echo "build-deb: unsupported arch '$ARCH' (expected amd64 or arm64)" >&2; exit 2 ;;
 esac
 
-if [ ! -x "$BUILD_DIR/tenbox" ] || [ ! -x "$BUILD_DIR/agentsphered" ] || [ ! -x "$BUILD_DIR/agentsphere-vm-runtime" ]; then
+if [ ! -x "$BUILD_DIR/agentsphere" ] || [ ! -x "$BUILD_DIR/agentsphered" ] || [ ! -x "$BUILD_DIR/agentsphere-vm-runtime" ]; then
     echo "build-deb: required binaries missing under $BUILD_DIR" >&2
-    echo "expected: tenbox, agentsphered, agentsphere-vm-runtime" >&2
+    echo "expected: agentsphere, agentsphered, agentsphere-vm-runtime" >&2
     exit 2
 fi
 
@@ -33,7 +34,7 @@ if [ ! -f "$SYSTEMD_UNIT" ]; then
     exit 2
 fi
 
-PKG_NAME="tenbox_${VERSION}_${ARCH}"
+PKG_NAME="agentsphere_${VERSION}_${ARCH}"
 STAGE_DIR="$(mktemp -d)"
 trap 'rm -rf "$STAGE_DIR"' EXIT
 
@@ -43,7 +44,7 @@ mkdir -p "$DEB_ROOT/usr/local/bin"
 mkdir -p "$DEB_ROOT/lib/systemd/system"
 
 # Drop binaries (already stripped by the workflow's strip step).
-install -m 0755 "$BUILD_DIR/tenbox"            "$DEB_ROOT/usr/local/bin/tenbox"
+install -m 0755 "$BUILD_DIR/agentsphere"            "$DEB_ROOT/usr/local/bin/agentsphere"
 install -m 0755 "$BUILD_DIR/agentsphered"           "$DEB_ROOT/usr/local/bin/agentsphered"
 install -m 0755 "$BUILD_DIR/agentsphere-vm-runtime" "$DEB_ROOT/usr/local/bin/agentsphere-vm-runtime"
 
