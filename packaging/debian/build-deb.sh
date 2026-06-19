@@ -1,4 +1,5 @@
 #!/bin/bash
+
 # Pack the prebuilt agentsphere / agentsphered / agentsphere-vm-runtime binaries into a
 # .deb. Expects the binaries to already exist under <build_dir>/ (i.e.
 # `cmake --build` has run and stripped them); does NOT build anything
