@@ -14,7 +14,7 @@ Description: TenBox virtualization daemon and CLI
  The daemon talks to KVM directly through /dev/kvm and ships its own
  virtio devices, qcow2 backend, and user-mode network stack, so it
  does NOT fork qemu-system-*. This package ships the headless daemon
- (tenboxd), the per-VM runtime (tenbox-vm-runtime) and the local CLI
+ (tenboxd), the per-VM runtime (agentsphere-vm-runtime) and the local CLI
  (tenbox). FFmpeg / libx264 / libopus / libyuv / libcurl / OpenSSL are
  statically linked and libstdc++ / libgcc are baked in via
  -static-libstdc++ / -static-libgcc, so the only runtime requirements

@@ -106,7 +106,7 @@ jobs:
                               -DAGENTSPHERE_STATIC_FFMPEG=ON \
                               -DAGENTSPHERE_STATIC_RUNTIME=ON
                           cmake --build build --parallel
-                          strip build/tenbox build/agentsphered build/tenbox-vm-runtime
+                          strip build/tenbox build/agentsphered build/agentsphere-vm-runtime
                       '
 
             # PR builds use the VERSION file as-is so we exercise the same

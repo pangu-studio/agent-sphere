@@ -21,9 +21,9 @@ BEGIN
             VALUE "CompanyName",      TENBOX_COMPANY_NAME
             VALUE "FileDescription",  "TenBox VM Runtime"
             VALUE "FileVersion",      TENBOX_VERSION_STR
-            VALUE "InternalName",     "tenbox-vm-runtime"
+            VALUE "InternalName",     "agentsphere-vm-runtime"
             VALUE "LegalCopyright",   TENBOX_COPYRIGHT
-            VALUE "OriginalFilename", "tenbox-vm-runtime.exe"
+            VALUE "OriginalFilename", "agentsphere-vm-runtime.exe"
             VALUE "ProductName",      TENBOX_PRODUCT_NAME
             VALUE "ProductVersion",   TENBOX_VERSION_STR
         END

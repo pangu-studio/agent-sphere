@@ -13,7 +13,7 @@ Type=simple
 EnvironmentFile=-/etc/tenbox/agentsphered.env
 ExecStart=/usr/local/bin/agentsphered \
     --data-dir ${AGENTSPHERE_DATA_DIR} \
-    --runtime /usr/local/bin/tenbox-vm-runtime \
+    --runtime /usr/local/bin/agentsphere-vm-runtime \
     --socket /run/tenbox/tenbox.sock \
     --cloud-url ${AGENTSPHERE_CLOUD_URL}
 Restart=on-failure

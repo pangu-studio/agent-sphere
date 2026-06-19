@@ -38,7 +38,7 @@
           <File Id="TenBoxManager" Source="$(var.BuildDir)\tenbox-manager.exe" KeyPath="yes" />
         </Component>
         <Component Id="RuntimeExe" Guid="*" Bitness="always64">
-          <File Id="TenBoxRuntime" Source="$(var.BuildDir)\tenbox-vm-runtime.exe" KeyPath="yes" />
+          <File Id="TenBoxRuntime" Source="$(var.BuildDir)\agentsphere-vm-runtime.exe" KeyPath="yes" />
         </Component>
         <Component Id="WinSparkleDll" Guid="*" Bitness="always64">
           <File Id="WinSparkle" Source="$(var.BuildDir)\WinSparkle.dll" KeyPath="yes" />
