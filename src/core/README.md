@@ -1,7 +1,7 @@
 # core
 
 Platform-independent virtualization core shared by the Windows, macOS, and Linux runtimes.
-Everything here is portable C++ and links into `tenbox-vm-runtime` regardless of host OS.
+Everything here is portable C++ and links into `agentsphere-vm-runtime` regardless of host OS.
 
 ## Modules
 

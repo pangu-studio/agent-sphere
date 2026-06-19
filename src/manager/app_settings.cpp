@@ -35,7 +35,7 @@ static std::string PathToUtf8(const fs::path& p) {
 std::string GetDataDir() {
     wchar_t path[MAX_PATH]{};
     if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, path))) {
-        return i18n::wide_to_utf8(path) + "\\TenBox";
+        return i18n::wide_to_utf8(path) + "\\AgentSphere";
     }
     return {};
 }
@@ -59,6 +59,16 @@ std::string EffectiveImageCacheDir(const AppSettings& s, const std::string& data
 
 std::vector<image_source::ImageSource> EffectiveSources(const AppSettings& s) {
     return s.sources.empty() ? image_source::DefaultSources() : s.sources;
+}
+
+static constexpr const char* kDefaultApiHost = "https://agent-sphere.pangustudio.com";
+
+std::string EffectiveApiHost(const AppSettings& s) {
+    return s.api_host.empty() ? kDefaultApiHost : s.api_host;
+}
+
+std::string EffectiveAppcastUrl(const AppSettings& s) {
+    return EffectiveApiHost(s) + "/api/appcast.xml";
 }
 
 std::string GenerateUuid() {
@@ -137,6 +147,18 @@ AppSettings LoadSettings(const std::string& data_dir) {
         if (j.contains("last_selected_source") && j["last_selected_source"].is_string()) {
             s.last_selected_source = j["last_selected_source"].get<std::string>();
         }
+        if (j.contains("cloud_url") && j["cloud_url"].is_string()) {
+            auto v = j["cloud_url"].get<std::string>();
+            if (!v.empty()) s.cloud_url = v;
+        }
+        if (j.contains("oidc_issuer") && j["oidc_issuer"].is_string()) {
+            auto v = j["oidc_issuer"].get<std::string>();
+            if (!v.empty()) s.oidc_issuer = v;
+        }
+        if (j.contains("api_host") && j["api_host"].is_string()) {
+            auto v = j["api_host"].get<std::string>();
+            if (!v.empty()) s.api_host = v;
+        }
         if (j.contains("llm_proxy") && j["llm_proxy"].is_object()) {
             auto& lp = j["llm_proxy"];
             if (lp.contains("mappings") && lp["mappings"].is_array()) {
@@ -213,6 +235,12 @@ void SaveSettings(const std::string& data_dir, const AppSettings& s) {
     }
     if (!s.last_selected_source.empty())
         j["last_selected_source"] = s.last_selected_source;
+    if (!s.cloud_url.empty())
+        j["cloud_url"] = s.cloud_url;
+    if (!s.oidc_issuer.empty())
+        j["oidc_issuer"] = s.oidc_issuer;
+    if (!s.api_host.empty())
+        j["api_host"] = s.api_host;
 
     {
         json lp;

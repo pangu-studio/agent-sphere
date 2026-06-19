@@ -22,7 +22,7 @@ class VmSession: ObservableObject {
     var displayScale: Int = 1
     var onRuntimeRunning: (() -> Void)?
 
-    private let bridge = TenBoxBridgeWrapper()
+    private let bridge = AgentSphereBridgeWrapper()
     private weak var clipboardHandler: ClipboardHandler?
     private var connecting = false
     private static let maxConsoleSize = 64 * 1024
@@ -279,14 +279,15 @@ struct VmDetailView: View {
             default: DisplayView(session: session)
             }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, appState.isVmDisplayFullscreen ? 0 : 16)
         .onAppear {
             if vm.state == .running {
                 session.connectIfNeeded()
             }
             if session.displayInitialized,
                session.displaySize.width > 0, session.displaySize.height > 0 {
-                Self.resizeWindowToFitDisplay(session.displaySize, session: session)
+                Self.resizeWindowToFitDisplay(session.displaySize, session: session,
+                                              isFullscreen: appState.isVmDisplayFullscreen)
             }
         }
         .onChange(of: vm.state, perform: { [oldState = vm.state] newState in
@@ -298,13 +299,36 @@ struct VmDetailView: View {
         })
         .onChange(of: session.displaySize, perform: { newSize in
             if newSize.width > 0 && newSize.height > 0 {
-                Self.resizeWindowToFitDisplay(newSize, session: session)
+                Self.resizeWindowToFitDisplay(newSize, session: session,
+                                              isFullscreen: appState.isVmDisplayFullscreen)
             }
         })
+        // 进入全屏时自动切换到显示标签页
+        .onChange(of: appState.isVmDisplayFullscreen) { fullscreen in
+            if fullscreen && session.displayInitialized {
+                session.activeTab = 2
+            }
+        }
     }
 
-    private static func resizeWindowToFitDisplay(_ guestSize: CGSize, session: VmSession) {
+    static func resizeWindowToFitDisplay(_ guestSize: CGSize, session: VmSession,
+                                                  isFullscreen: Bool) {
         guard let window = NSApplication.shared.keyWindow else { return }
+
+        // 当窗口应当铺满屏幕时，绝不主动改变窗口尺寸。否则会出现内容区缩小、
+        // 右侧/底部露出黑边的问题（关闭虚拟机切回 Info 标签页时尤为明显）。
+        // 两种独立情形：
+        //   • macOS 系统级全屏（.fullScreen）：窗口 frame 由系统管理，此时调用
+        //     setFrame 不会缩小全屏窗口，却会把承载内容的 hostingView 缩到这个
+        //     小尺寸，使全屏窗口的其余部分变黑——正是本 bug 的根因。
+        //   • 自定义 VM 画面全屏（isFullscreen == true）：进入时已把窗口设为
+        //     screen.frame，必须保持，不能因 guest 分辨率变化又被改回去。
+        // 退出自定义全屏的路径以 isFullscreen == false 调用、且此时窗口不含
+        // .fullScreen，因此仍会正常按 guest 尺寸恢复窗口。
+        if isFullscreen || window.styleMask.contains(.fullScreen) {
+            return
+        }
+
         guard let screen = window.screen ?? NSScreen.main else { return }
 
         let backingScale = screen.backingScaleFactor
@@ -312,6 +336,7 @@ struct VmDetailView: View {
         let pointW = guestSize.width / effectiveScale
         let pointH = guestSize.height / effectiveScale
 
+        // 走到这里说明窗口处于普通模式（非任何全屏），需按 chrome 边距换算窗口尺寸。
         let extraW = Self.chromeExtraW
         let extraH = Self.chromeExtraH
 

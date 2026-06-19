@@ -1,62 +1,36 @@
-# TenBox Website
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-Source of [tenbox.ai](https://tenbox.ai) — the marketing site and release manifest host
-for TenBox. Built with Vue 3 + Vite and deployed as static files.
+## Getting Started
 
-## Stack
-
-- **Vue 3** (`<script setup>` SFCs) with [`vue-i18n`](https://vue-i18n.intlify.dev/) for
-  English / Simplified Chinese localization
-- **Vite 7** as build tool and dev server
-- **Custom domain** served via `public/CNAME` (→ `tenbox.ai`)
-
-## Project layout
-
-```
-website/
-├── index.html           # Page shell, favicon, SEO meta
-├── vite.config.js       # Injects __APP_VERSION__ and download URLs from public/api/version.json
-├── src/
-│   ├── main.js          # Vue + i18n bootstrap
-│   ├── App.vue          # Root layout
-│   ├── components/      # NavBar, HeroSection, FeaturesSection, HowItWorks, FooterSection
-│   ├── i18n/            # en-US.json, zh-CN.json, and the i18n plugin setup
-│   └── assets/          # Static art bundled by Vite
-└── public/
-    ├── favicon.png
-    ├── CNAME            # GitHub Pages custom domain
-    ├── images/          # Screenshots referenced by the root README and the site
-    └── api/
-        └── version.json # Canonical release manifest consumed by the app and the site
-```
-
-## Release manifest (`public/api/version.json`)
-
-The same `version.json` served at [`https://tenbox.ai/api/version.json`](https://tenbox.ai/api/version.json)
-is read at build time by `vite.config.js` to inject the current version and per-platform
-download URLs into the page, and at runtime by the TenBox manager for update checks.
-Keep its schema (`latest_version`, `platforms.windows`, `platforms.macos`, `sha256`, ...)
-in sync with the manager's expectations — see `scripts/image_manager.py` and the
-`http_download` / update-check paths under `src/manager`.
-
-## Develop
+First, run the development server:
 
 ```bash
-cd website
-npm install
-npm run dev       # Vite dev server with HMR
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
 ```
 
-## Build & preview
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-```bash
-npm run build     # Emits dist/
-npm run preview   # Serve the built site locally
-```
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-The generated `dist/` folder is what gets published to the hosting provider.
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Editor tips
+## Learn More
 
-Vue 3 tooling recommendations (Volar, TypeScript Vue plugin, etc.) are documented
-in the [Vue Scaling-up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+To learn more about Next.js, take a look at the following resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

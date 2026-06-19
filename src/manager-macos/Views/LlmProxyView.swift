@@ -10,7 +10,7 @@ struct LlmProxySheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("LLM Proxy")
+                Text("LLM 代理")
                     .font(.headline)
                 Spacer()
                 Button {
@@ -24,7 +24,7 @@ struct LlmProxySheet: View {
             .padding(.top)
 
             if appState.llmMappings.isEmpty {
-                Text("No model mappings")
+                Text("暂无模型映射")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -56,7 +56,7 @@ struct LlmProxySheet: View {
                 }
             }
 
-            Text("VMs can access LLM APIs via http://10.0.2.3/ with any API key. Model aliases map to your configured LLM backends, keeping API credentials safe on the host.")
+            Text("虚拟机可通过 http://10.0.2.3/ 使用任意 API 密钥访问 LLM 接口。模型别名映射到已配置的 LLM 后端，API 凭证安全保存在宿主机上。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal)
@@ -65,7 +65,7 @@ struct LlmProxySheet: View {
             Divider()
 
             HStack {
-                Toggle("Enable Request Logging", isOn: Binding(
+                Toggle("启用请求日志", isOn: Binding(
                     get: { appState.llmLoggingEnabled },
                     set: { appState.setLlmLogging(enabled: $0) }
                 ))
@@ -76,7 +76,7 @@ struct LlmProxySheet: View {
             .padding(.top, 6)
 
             HStack(spacing: 4) {
-                Text("Logs saved to:")
+                Text("日志保存路径：")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button {
@@ -96,7 +96,7 @@ struct LlmProxySheet: View {
             .padding(.bottom, 4)
 
             HStack {
-                Button("Done") { dismiss() }
+                Button("完成") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
             }
@@ -153,33 +153,33 @@ struct EditLlmMappingSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(isEdit ? "Edit Mapping" : "Add Mapping")
+            Text(isEdit ? "编辑映射" : "添加映射")
                 .font(.title3)
                 .fontWeight(.semibold)
                 .padding()
 
             Form {
-                TextField("Alias", text: $alias, prompt: Text("e.g. default"))
+                TextField("别名", text: $alias, prompt: Text("例如 default"))
                     .disableAutocorrection(true)
-                Picker("API Type", selection: $apiType) {
+                Picker("API 类型", selection: $apiType) {
                     ForEach(LlmApiType.allCases) { type in
                         Text(type.displayName).tag(type)
                     }
                 }
-                TextField("Base URL", text: $targetUrl, prompt: Text("https://api.openai.com/v1"))
+                TextField("接口地址", text: $targetUrl, prompt: Text("https://api.openai.com/v1"))
                     .disableAutocorrection(true)
-                TextField("API Key", text: $apiKey, prompt: Text("sk-..."))
+                TextField("API 密钥", text: $apiKey, prompt: Text("sk-..."))
                     .disableAutocorrection(true)
-                TextField("Model", text: $model, prompt: Text("e.g. gpt-4o"))
+                TextField("模型", text: $model, prompt: Text("例如 gpt-4o"))
                     .disableAutocorrection(true)
             }
             .padding(.horizontal)
 
             HStack {
-                Button("Cancel") { dismiss() }
+                Button("取消") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button(isEdit ? "Save" : "Add") { save() }
+                Button(isEdit ? "保存" : "添加") { save() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!isValid)
             }

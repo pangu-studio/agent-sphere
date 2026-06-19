@@ -325,6 +325,18 @@ enum class S {
     kTrayHide,
     kSettingsCloseToTray,
 
+    // Login dialog
+    kLoginTitle,
+    kLoginSubtitle,
+    kLoginBtn,
+    kLoginWaiting,
+    kLoginCloudUrlEmpty,
+    kLoginSuccess,
+    kMenuLogin,
+    kMenuLogout,
+    kLoginUserInfo,
+    kLoggedIn,
+
     kCount  // Must be last
 };
 

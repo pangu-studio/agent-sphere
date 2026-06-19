@@ -49,6 +49,15 @@ struct AppSettings {
     std::vector<image_source::ImageSource> sources; // empty = use DefaultSources()
     std::string last_selected_source; // name of last selected source
     LlmProxySettings llm_proxy;
+    // AgentSphere cloud backend URL. Empty = use AGENTSPHERE_DEFAULT_CLOUD_URL
+    // compile-time default.
+    std::string cloud_url;
+    // OIDC issuer URL. Empty = use AGENTSPHERE_DEFAULT_OIDC_ISSUER compile-time
+    // default.
+    std::string oidc_issuer;
+    // API host for images/sources/version/appcast endpoints.
+    // Empty = use kDefaultApiHost ("https://tenbox.ai").
+    std::string api_host;
 };
 
 // Resolve effective directories (returns custom if set, otherwise default).
@@ -57,6 +66,12 @@ std::string EffectiveImageCacheDir(const AppSettings& s, const std::string& data
 
 // Returns user-configured sources if non-empty, otherwise DefaultSources().
 std::vector<image_source::ImageSource> EffectiveSources(const AppSettings& s);
+
+// Returns the effective API host (api_host field, or "https://tenbox.ai" if empty).
+std::string EffectiveApiHost(const AppSettings &s);
+
+// Returns the appcast URL derived from the effective API host.
+std::string EffectiveAppcastUrl(const AppSettings &s);
 
 AppSettings LoadSettings(const std::string& data_dir);
 void SaveSettings(const std::string& data_dir, const AppSettings& s);

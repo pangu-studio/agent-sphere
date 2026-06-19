@@ -1,9 +1,9 @@
 #!/bin/bash
-# Build TenBox for macOS as a Universal Binary (arm64 + x86_64).
+# Build Agent Sphere for macOS as a Universal Binary (arm64 + x86_64).
 #
 # This script builds both architectures, merges them with lipo, and produces:
-#   build/TenBox-{ver}.app  (universal)
-#   build/TenBox-{ver}.zip  (for Sparkle updates)
+#   build/Agent Sphere_{ver}.app  (universal)
+#   build/Agent Sphere_{ver}.zip  (for Sparkle updates)
 #
 # Usage:
 #   ./build-macos.sh [--release|--debug]
@@ -39,11 +39,12 @@ fi
 BUILD_DIR="$ROOT_DIR/build"
 MANAGER_SRC="$ROOT_DIR/src/manager-macos"
 PLIST="$MANAGER_SRC/Resources/Info.plist"
-ENTITLEMENTS="$MANAGER_SRC/Resources/TenBox.entitlements"
+ENTITLEMENTS="$MANAGER_SRC/Resources/AgentSphere.entitlements"
+RUNTIME_ENTITLEMENTS="$ROOT_DIR/runtime.entitlements"
 TARGET_ARCHS="arm64 x86_64"
 
 echo "===================================="
-echo " TenBox macOS Build v$VERSION ($CMAKE_BUILD_TYPE)"
+echo " Agent Sphere macOS Build v$VERSION ($CMAKE_BUILD_TYPE)"
 echo " Universal Binary: $TARGET_ARCHS"
 echo "===================================="
 echo ""
@@ -116,8 +117,8 @@ echo ""
 
 CMAKE_DIR="$BUILD_DIR/cmake-$ARCH"
 
-# ── Step 1: Build tenbox-vm-runtime (C++ via CMake) ──────────────────────
-echo "[$ARCH 1/2] Building tenbox-vm-runtime..."
+# ── Step 1: Build agentsphere-vm-runtime (C++ via CMake) ──────────────────────
+echo "[$ARCH 1/2] Building agentsphere-vm-runtime..."
 mkdir -p "$CMAKE_DIR"
 cd "$CMAKE_DIR"
 
@@ -125,24 +126,39 @@ cmake "$ROOT_DIR" \
     -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
     -DCMAKE_OSX_ARCHITECTURES="$ARCH"
 
-cmake --build . --target tenbox-vm-runtime -j"$CPU_COUNT"
+cmake --build . --target agentsphere-vm-runtime -j"$CPU_COUNT"
 
-if [ ! -f "$CMAKE_DIR/tenbox-vm-runtime" ]; then
-    echo "Error: tenbox-vm-runtime binary not found after build."
+if [ ! -f "$CMAKE_DIR/agentsphere-vm-runtime" ]; then
+    echo "Error: agentsphere-vm-runtime binary not found after build."
     exit 1
 fi
-echo "  -> $CMAKE_DIR/tenbox-vm-runtime"
+echo "  -> $CMAKE_DIR/agentsphere-vm-runtime"
 
-# ── Step 2: Build TenBoxManager (Swift/Obj-C++ via SPM) ─────────────────
+# ── Step 2: Build AgentSphereManager (Swift/Obj-C++ via SPM) ─────────────────
 echo ""
-echo "[$ARCH 2/2] Building TenBoxManager via SPM ($SWIFT_CONFIG, $ARCH)..."
+echo "[$ARCH 2/2] Building AgentSphereManager via SPM ($SWIFT_CONFIG, $ARCH)..."
 
 cd "$MANAGER_SRC"
-if [ -d "$MANAGER_SRC/.build" ]; then
-    chmod -R u+rwx "$MANAGER_SRC/.build" 2>/dev/null || true
-    rm -rf "$MANAGER_SRC/.build" 2>/dev/null || true
-fi
-SPM_SCRATCH="$MANAGER_SRC/.build-$ARCH"
+# IMPORTANT: keep the SPM scratch dir OUTSIDE the package directory.
+# SwiftPM watches the package root as a directory-structure node and only
+# excludes ".git"/".build" from it — a custom --scratch-path placed inside the
+# package (e.g. ".build-arm64") is NOT excluded, so build products churn the
+# watched tree, invalidate the BuildDescription mid-run, and produce
+# "unknown build description" / "failed to write auxiliary file" errors.
+# Putting scratch under build/ (outside manager-macos/) keeps it unwatched.
+SPM_SCRATCH="$BUILD_DIR/spm-$ARCH"
+# Purge any legacy in-package scratch dirs from older builds (they poison the
+# directory-structure watcher even when no longer used as scratch-path).
+for STALE in "$MANAGER_SRC/.build" "$MANAGER_SRC/.build-$ARCH"; do
+    if [ -e "$STALE" ]; then
+        chmod -R u+rwx "$STALE" 2>/dev/null || true
+        rm -rf "$STALE" 2>/dev/null || true
+    fi
+done
+# Start each build from a clean scratch so the release.yaml / description.json /
+# build.db triple can never be left in a desynced state by a partial cleanup.
+chmod -R u+rwx "$SPM_SCRATCH" 2>/dev/null || true
+rm -rf "$SPM_SCRATCH"
 if ! swift build -c "$SWIFT_CONFIG" --arch "$ARCH" --scratch-path "$SPM_SCRATCH"; then
     echo "  -> SPM build failed, resetting scratch directory and retrying..."
     chmod -R u+rwx "$SPM_SCRATCH" 2>/dev/null || true
@@ -151,11 +167,11 @@ if ! swift build -c "$SWIFT_CONFIG" --arch "$ARCH" --scratch-path "$SPM_SCRATCH"
 fi
 
 SWIFT_BUILD_DIR="$SPM_SCRATCH/${ARCH}-apple-macosx/$SWIFT_CONFIG"
-if [ ! -f "$SWIFT_BUILD_DIR/TenBoxManager" ]; then
-    echo "Error: TenBoxManager binary not found at $SWIFT_BUILD_DIR/TenBoxManager"
+if [ ! -f "$SWIFT_BUILD_DIR/AgentSphereManager" ]; then
+    echo "Error: AgentSphereManager binary not found at $SWIFT_BUILD_DIR/AgentSphereManager"
     exit 1
 fi
-echo "  -> $SWIFT_BUILD_DIR/TenBoxManager"
+echo "  -> $SWIFT_BUILD_DIR/AgentSphereManager"
 
 echo ""
 done
@@ -168,47 +184,46 @@ echo "# Creating Universal Binary"
 echo "####################################################################"
 echo ""
 
-APP_DIR="$BUILD_DIR/TenBox-${VERSION}.app"
+APP_DIR="$BUILD_DIR/Agent Sphere_${VERSION}.app"
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
-# Merge tenbox-vm-runtime
-echo "Merging tenbox-vm-runtime (arm64 + x86_64)..."
+# Merge agentsphere-vm-runtime
+echo "Merging agentsphere-vm-runtime (arm64 + x86_64)..."
 lipo -create \
-    "$BUILD_DIR/cmake-arm64/tenbox-vm-runtime" \
-    "$BUILD_DIR/cmake-x86_64/tenbox-vm-runtime" \
-    -output "$APP_DIR/Contents/MacOS/tenbox-vm-runtime"
-echo "  -> $(lipo -archs "$APP_DIR/Contents/MacOS/tenbox-vm-runtime")"
+    "$BUILD_DIR/cmake-arm64/agentsphere-vm-runtime" \
+    "$BUILD_DIR/cmake-x86_64/agentsphere-vm-runtime" \
+    -output "$APP_DIR/Contents/MacOS/agentsphere-vm-runtime"
+echo "  -> $(lipo -archs "$APP_DIR/Contents/MacOS/agentsphere-vm-runtime")"
 
-codesign --force --sign - --entitlements "$ENTITLEMENTS" "$APP_DIR/Contents/MacOS/tenbox-vm-runtime"
-echo "  -> codesign applied (ad-hoc + Hypervisor entitlement)"
+# Signed later, inside-out, in the dedicated signing stage (with runtime.entitlements).
 
-# Merge TenBoxManager
+# Merge AgentSphereManager
 echo ""
-echo "Merging TenBoxManager (arm64 + x86_64)..."
-SPM_ARM64="$MANAGER_SRC/.build-arm64/arm64-apple-macosx/$SWIFT_CONFIG"
-SPM_X86="$MANAGER_SRC/.build-x86_64/x86_64-apple-macosx/$SWIFT_CONFIG"
+echo "Merging AgentSphereManager (arm64 + x86_64)..."
+SPM_ARM64="$BUILD_DIR/spm-arm64/arm64-apple-macosx/$SWIFT_CONFIG"
+SPM_X86="$BUILD_DIR/spm-x86_64/x86_64-apple-macosx/$SWIFT_CONFIG"
 lipo -create \
-    "$SPM_ARM64/TenBoxManager" \
-    "$SPM_X86/TenBoxManager" \
-    -output "$APP_DIR/Contents/MacOS/TenBoxManager"
-echo "  -> $(lipo -archs "$APP_DIR/Contents/MacOS/TenBoxManager")"
+    "$SPM_ARM64/AgentSphereManager" \
+    "$SPM_X86/AgentSphereManager" \
+    -output "$APP_DIR/Contents/MacOS/AgentSphereManager"
+echo "  -> $(lipo -archs "$APP_DIR/Contents/MacOS/AgentSphereManager")"
 
 # ── Assemble app bundle resources ────────────────────────────────────────────
 
 echo ""
-echo "Assembling TenBox.app bundle..."
+echo "Assembling Agent Sphere.app bundle..."
 
 cp "$PLIST" "$APP_DIR/Contents/Info.plist"
 
 # Copy SPM resource bundles from either arch (architecture-independent)
-BUNDLE_PATH=$(find -L "$SPM_ARM64" -name "TenBoxManager_TenBoxManager.bundle" -type d 2>/dev/null | head -1)
+BUNDLE_PATH=$(find -L "$SPM_ARM64" -name "AgentSphereManager_AgentSphereManager.bundle" -type d 2>/dev/null | head -1)
 if [ -n "$BUNDLE_PATH" ] && [ -d "$BUNDLE_PATH" ]; then
     cp -R "$BUNDLE_PATH" "$APP_DIR/Contents/Resources/"
     echo "  -> Copied resource bundle"
 else
-    echo "WARNING: TenBoxManager_TenBoxManager.bundle not found!"
+    echo "WARNING: AgentSphereManager_AgentSphereManager.bundle not found!"
 fi
 
 if [ -n "$ICNS_PATH" ] && [ -f "$ICNS_PATH" ]; then
@@ -225,41 +240,75 @@ elif [ -f "$METAL_SRC" ]; then
 fi
 
 # Copy Sparkle framework from SPM build artifacts (universal xcframework)
-SPM_SCRATCH_REF="$MANAGER_SRC/.build-arm64"
+SPM_SCRATCH_REF="$BUILD_DIR/spm-arm64"
 SPARKLE_FRAMEWORK=$(find -L "$SPM_SCRATCH_REF/artifacts" -name "Sparkle.framework" -type d 2>/dev/null | head -1)
 if [ -n "$SPARKLE_FRAMEWORK" ] && [ -d "$SPARKLE_FRAMEWORK" ]; then
     mkdir -p "$APP_DIR/Contents/Frameworks"
     cp -R "$SPARKLE_FRAMEWORK" "$APP_DIR/Contents/Frameworks/"
-    echo "  -> Copied Sparkle.framework"
 fi
 
 install_name_tool -add_rpath "@loader_path/../Frameworks" \
-    "$APP_DIR/Contents/MacOS/TenBoxManager" 2>/dev/null || true
+    "$APP_DIR/Contents/MacOS/AgentSphereManager" 2>/dev/null || true
 
-# ── Sign the universal app bundle ────────────────────────────────────────────
+# ── Sign the universal app bundle (inside-out, per-component entitlements) ────
 
 echo ""
-echo "Signing TenBox.app (universal)..."
+echo "Signing Agent Sphere.app (universal)..."
 if [ "$CODESIGN_IDENTITY" != "-" ]; then
     echo "  Using: $CODESIGN_IDENTITY"
-    codesign --deep --force --options runtime \
-        --entitlements "$ENTITLEMENTS" \
-        --sign "$CODESIGN_IDENTITY" "$APP_DIR"
 else
     echo "  Using: ad-hoc (no Developer ID found)"
-    codesign --deep --force --options runtime \
-        --entitlements "$ENTITLEMENTS" \
-        --sign - "$APP_DIR"
 fi
+
+# codesign refuses to sign files carrying Finder metadata (com.apple.FinderInfo /
+# com.apple.macl). Source assets such as icon.png can pick these up and get copied
+# into the bundle; strip every extended attribute from the staged app before signing.
+xattr -cr "$APP_DIR"
+
+# Sign from the inside out so nested code is sealed before its container, giving
+# each component only the entitlements it needs. (Replaces the deprecated --deep,
+# which would stamp the app's Hypervisor entitlement onto Sparkle as well.)
+
+# 1) Sparkle.framework — a framework must not carry app entitlements.
+SPARKLE_FW="$APP_DIR/Contents/Frameworks/Sparkle.framework"
+if [ -d "$SPARKLE_FW" ]; then
+    for nested in \
+        "$SPARKLE_FW/Versions/Current/Autoupdate" \
+        "$SPARKLE_FW/Versions/Current/Updater.app" \
+        "$SPARKLE_FW/Versions/Current/XPCServices/"*.xpc; do
+        if [ -e "$nested" ]; then
+            codesign --force --options runtime --sign "$CODESIGN_IDENTITY" "$nested"
+        fi
+    done
+    codesign --force --options runtime --sign "$CODESIGN_IDENTITY" "$SPARKLE_FW"
+fi
+
+# 2) agentsphere-vm-runtime — needs the Hypervisor entitlement only.
+codesign --force --options runtime \
+    --entitlements "$RUNTIME_ENTITLEMENTS" \
+    --sign "$CODESIGN_IDENTITY" "$APP_DIR/Contents/MacOS/agentsphere-vm-runtime"
+
+# 3) AgentSphereManager — the main executable, full app entitlements.
+codesign --force --options runtime \
+    --entitlements "$ENTITLEMENTS" \
+    --sign "$CODESIGN_IDENTITY" "$APP_DIR/Contents/MacOS/AgentSphereManager"
+
+# 4) Outer bundle — seals everything, app entitlements.
+codesign --force --options runtime \
+    --entitlements "$ENTITLEMENTS" \
+    --sign "$CODESIGN_IDENTITY" "$APP_DIR"
+
+# Fail the build early if the result is not a valid, self-consistent signature.
+codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 
 echo "  -> $APP_DIR"
 
 # ── Create ZIP for Sparkle updates + EdDSA signature ─────────────────────────
 
 echo ""
-ZIP_PATH="$BUILD_DIR/TenBox-${VERSION}.zip"
+ZIP_PATH="$BUILD_DIR/Agent Sphere_${VERSION}.zip"
 SIGNATURE_PATH="${ZIP_PATH%.zip}.signature"
-STAGING_APP="$BUILD_DIR/.staging-universal/TenBox.app"
+STAGING_APP="$BUILD_DIR/.staging-universal/Agent Sphere.app"
 echo "Creating Sparkle update ZIP (universal)..."
 rm -rf "$(dirname "$STAGING_APP")"
 mkdir -p "$(dirname "$STAGING_APP")"

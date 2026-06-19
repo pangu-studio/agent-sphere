@@ -1,7 +1,8 @@
 import SwiftUI
 
 private let hostMaxCpus = ProcessInfo.processInfo.activeProcessorCount
-private let hostMaxMemoryGb = max(1, Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024)))
+private let hostMaxMemoryGb = max(
+    1, Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024)))
 
 // MARK: - Create VM Dialog (Wizard)
 
@@ -37,18 +38,18 @@ private struct SelectImagePage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("Create New VM")
+            Text("新建 VM - 选择镜像")
                 .font(.title2)
                 .fontWeight(.semibold)
                 .padding(.top, 16)
                 .padding(.bottom, 8)
 
             HStack {
-                Text("Source:")
+                Text("源:")
                     .frame(width: 56, alignment: .trailing)
                 Picker("", selection: $vm.selectedSourceIndex) {
                     if vm.sources.isEmpty {
-                        Text("Loading...").tag(-1)
+                        Text("加载中...").tag(-1)
                     }
                     ForEach(Array(vm.sources.enumerated()), id: \.offset) { i, src in
                         Text(src.name).tag(i)
@@ -56,9 +57,11 @@ private struct SelectImagePage: View {
                 }
                 .labelsHidden()
                 .disabled(vm.sources.isEmpty)
-                .onChange(of: vm.selectedSourceIndex, perform: { _ in
-                    vm.onSourceChanged()
-                })
+                .onChange(
+                    of: vm.selectedSourceIndex,
+                    perform: { _ in
+                        vm.onSourceChanged()
+                    })
                 Button {
                     vm.refreshOnlineImages()
                 } label: {
@@ -75,13 +78,16 @@ private struct SelectImagePage: View {
                         Section {
                             ForEach(vm.cachedImages, id: \.cacheId) { img in
                                 let tag = img.cacheId + "||cached"
-                                SelectableImageRow(image: img, isCached: true, isSelected: vm.selectedImageId == tag) {
+                                SelectableImageRow(
+                                    image: img, isCached: true,
+                                    isSelected: vm.selectedImageId == tag
+                                ) {
                                     vm.selectedImageId = tag
                                 }
                                 .id(tag)
                             }
                         } header: {
-                            Text("Cached")
+                            Text("缓存")
                                 .font(.headline)
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 8)
@@ -93,7 +99,7 @@ private struct SelectImagePage: View {
                             HStack {
                                 ProgressView()
                                     .scaleEffect(0.7)
-                                Text("Loading...")
+                                Text("加载中...")
                                     .foregroundStyle(.secondary)
                             }
                             .padding(.horizontal, 8)
@@ -101,13 +107,15 @@ private struct SelectImagePage: View {
                         }
                         ForEach(vm.filteredOnlineImages, id: \.cacheId) { img in
                             let tag = img.cacheId + "||online"
-                            SelectableImageRow(image: img, isCached: false, isSelected: vm.selectedImageId == tag) {
+                            SelectableImageRow(
+                                image: img, isCached: false, isSelected: vm.selectedImageId == tag
+                            ) {
                                 vm.selectedImageId = tag
                             }
                             .id(tag)
                         }
                     } header: {
-                        Text("Online")
+                        Text("在线")
                             .font(.headline)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 8)
@@ -135,21 +143,21 @@ private struct SelectImagePage: View {
             Divider()
 
             HStack {
-                Button("Delete Cache") {
+                Button("删除缓存") {
                     vm.deleteSelectedCache()
                 }
                 .disabled(!vm.canDeleteCache)
 
                 Spacer()
 
-                Button("Local Image...") {
+                Button("本地镜像...") {
                     vm.browseLocalImage()
                 }
 
-                Button("Cancel") { dismiss() }
+                Button("取消") { dismiss() }
                     .keyboardShortcut(.cancelAction)
 
-                Button("Next") {
+                Button("下一步") {
                     vm.goNext()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -167,7 +175,7 @@ private struct DownloadingPage: View {
         VStack(spacing: 16) {
             Spacer()
 
-            Text("Downloading \(vm.selectedImage?.displayName ?? "Image")")
+            Text("正在下载 \(vm.selectedImage?.displayName ?? "镜像")")
                 .font(.title2)
                 .fontWeight(.semibold)
 
@@ -186,7 +194,7 @@ private struct DownloadingPage: View {
             Divider()
             HStack {
                 Spacer()
-                Button("Cancel") {
+                Button("取消") {
                     vm.cancelDownload()
                 }
                 .keyboardShortcut(.cancelAction)
@@ -205,35 +213,35 @@ private struct ConfirmPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("Create New VM")
+            Text("新建 VM - 选择镜像")
                 .font(.title2)
                 .fontWeight(.semibold)
                 .padding()
 
             VStack(alignment: .leading, spacing: 16) {
-                VmFormSection(title: "General") {
-                    VmFormRow(label: "Name", labelWidth: labelWidth) {
+                VmFormSection(title: "通用") {
+                    VmFormRow(label: "名称", labelWidth: labelWidth) {
                         TextField("", text: $vm.vmName)
                             .textFieldStyle(.roundedBorder)
                     }
-                    VmFormRow(label: "CPUs", labelWidth: labelWidth) {
+                    VmFormRow(label: "CPU 数量", labelWidth: labelWidth) {
                         VmSliderRow(value: $vm.cpuCount, range: 1...hostMaxCpus)
                     }
-                    VmFormRow(label: "Memory", labelWidth: labelWidth) {
+                    VmFormRow(label: "内存", labelWidth: labelWidth) {
                         VmSliderRow(value: $vm.memoryGb, range: 1...hostMaxMemoryGb, unit: "GB")
                     }
                 }
 
-                VmFormSection(title: "Advanced") {
+                VmFormSection(title: "高级") {
                     VmFormRow(label: "", labelWidth: labelWidth) {
-                        Toggle("Linux kernel debug log", isOn: $vm.debugMode)
+                        Toggle("Linux 内核调试日志", isOn: $vm.debugMode)
                             .toggleStyle(.checkbox)
                     }
                 }
 
                 if let img = vm.selectedImage {
-                    VmFormSection(title: "Image") {
-                        VmFormRow(label: "Image", labelWidth: labelWidth) {
+                    VmFormSection(title: "镜像") {
+                        VmFormRow(label: "镜像", labelWidth: labelWidth) {
                             Text(img.displayName)
                                 .foregroundStyle(.secondary)
                         }
@@ -491,7 +499,9 @@ class CreateVmViewModel: ObservableObject {
         Task {
             do {
                 let images = try await service.fetchImages(from: url)
-                let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "99.99.99"
+                let appVersion =
+                    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
+                    as? String ?? "99.99.99"
                 onlineImages = service.filterImages(images, appVersion: appVersion)
             } catch {
                 errorMessage = "Failed to load images: \(error.localizedDescription)"
@@ -521,17 +531,23 @@ class CreateVmViewModel: ObservableObject {
 
         let dirPath = url.path
         let fm = FileManager.default
-        var kernel = "", initrd = "", disk = ""
+        var kernel = ""
+        var initrd = ""
+        var disk = ""
 
         if let items = try? fm.contentsOfDirectory(atPath: dirPath) {
             for name in items {
                 let fullPath = (dirPath as NSString).appendingPathComponent(name)
                 var isDir: ObjCBool = false
-                guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), !isDir.boolValue else { continue }
+                guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), !isDir.boolValue else {
+                    continue
+                }
 
                 if name == "vmlinuz" || name.hasPrefix("vmlinuz") || name.hasPrefix("Image") {
                     if kernel.isEmpty { kernel = name }
-                } else if name.hasPrefix("initrd") || name.hasPrefix("initramfs") || name.hasSuffix(".cpio.gz") {
+                } else if name.hasPrefix("initrd") || name.hasPrefix("initramfs")
+                    || name.hasSuffix(".cpio.gz")
+                {
                     if initrd.isEmpty { initrd = name }
                 } else if name.hasSuffix(".qcow2") {
                     if disk.isEmpty { disk = name }
@@ -594,38 +610,44 @@ class CreateVmViewModel: ObservableObject {
 
         downloadTask = Task {
             do {
-                try await service.downloadImage(entry, progress: { [weak self] fileIdx, totalFiles, fileName, downloaded, total in
-                    Task { @MainActor in
-                        guard let self = self else { return }
-                        let fileProgress = total > 0 ? Double(downloaded) / Double(total) : 0
-                        self.downloadProgress = fileProgress
+                try await service.downloadImage(
+                    entry,
+                    progress: { [weak self] fileIdx, totalFiles, fileName, downloaded, total in
+                        Task { @MainActor in
+                            guard let self = self else { return }
+                            let fileProgress = total > 0 ? Double(downloaded) / Double(total) : 0
+                            self.downloadProgress = fileProgress
 
-                        let now = CFAbsoluteTimeGetCurrent()
-                        let dt = now - self.speedLastTime
-                        if dt >= 0.5 {
-                            let db = Double(downloaded) - Double(self.speedLastBytes)
-                            if db > 0 {
-                                let instantSpeed = db / dt
-                                self.speedBytesPerSec = self.speedBytesPerSec > 0
-                                    ? self.speedBytesPerSec * 0.3 + instantSpeed * 0.7
-                                    : instantSpeed
+                            let now = CFAbsoluteTimeGetCurrent()
+                            let dt = now - self.speedLastTime
+                            if dt >= 0.5 {
+                                let db = Double(downloaded) - Double(self.speedLastBytes)
+                                if db > 0 {
+                                    let instantSpeed = db / dt
+                                    self.speedBytesPerSec =
+                                        self.speedBytesPerSec > 0
+                                        ? self.speedBytesPerSec * 0.3 + instantSpeed * 0.7
+                                        : instantSpeed
+                                }
+                                self.speedLastBytes = downloaded
+                                self.speedLastTime = now
                             }
-                            self.speedLastBytes = downloaded
-                            self.speedLastTime = now
-                        }
 
-                        var text = "File \(fileIdx + 1)/\(totalFiles): \(fileName)"
-                        text += "\n\(formatSize(downloaded)) / \(formatSize(total))"
-                        if self.speedBytesPerSec > 0 {
-                            text += "  ·  \(formatSize(UInt64(self.speedBytesPerSec)))/s"
-                            let remaining = total > downloaded ? Double(total - downloaded) / self.speedBytesPerSec : 0
-                            text += "  ·  \(formatDuration(remaining))"
+                            var text = "File \(fileIdx + 1)/\(totalFiles): \(fileName)"
+                            text += "\n\(formatSize(downloaded)) / \(formatSize(total))"
+                            if self.speedBytesPerSec > 0 {
+                                text += "  ·  \(formatSize(UInt64(self.speedBytesPerSec)))/s"
+                                let remaining =
+                                    total > downloaded
+                                    ? Double(total - downloaded) / self.speedBytesPerSec : 0
+                                text += "  ·  \(formatDuration(remaining))"
+                            }
+                            self.downloadStatusText = text
                         }
-                        self.downloadStatusText = text
-                    }
-                }, isCancelled: { [weak self] in
-                    self?.downloadCancelled ?? true
-                })
+                    },
+                    isCancelled: { [weak self] in
+                        self?.downloadCancelled ?? true
+                    })
 
                 loadCachedImages()
                 page = .confirm
@@ -657,10 +679,14 @@ class CreateVmViewModel: ObservableObject {
             sourceDir = service.imageCacheDir(for: img)
         }
 
-        var kernelPath = "", initrdPath = "", diskPath = ""
+        var kernelPath = ""
+        var initrdPath = ""
+        var diskPath = ""
         for file in img.files {
             let path = (sourceDir as NSString).appendingPathComponent(file.name)
-            if file.name == "vmlinuz" || file.name.hasPrefix("vmlinuz") || file.name.hasPrefix("Image") {
+            if file.name == "vmlinuz" || file.name.hasPrefix("vmlinuz")
+                || file.name.hasPrefix("Image")
+            {
                 kernelPath = path
             } else if file.name.hasPrefix("initrd") || file.name.hasPrefix("initramfs") {
                 initrdPath = path
@@ -733,6 +759,10 @@ struct EditVmDialog: View {
     @State private var memoryGb: Int
     @State private var cpuCount: Int
     @State private var debugMode: Bool
+    @State private var vmDir: String
+    @State private var kernelPath: String
+    @State private var initrdPath: String
+    @State private var diskPath: String
 
     private let labelWidth: CGFloat = 72
 
@@ -742,53 +772,151 @@ struct EditVmDialog: View {
         _memoryGb = State(initialValue: max(1, vm.memoryMb / 1024))
         _cpuCount = State(initialValue: vm.cpuCount)
         _debugMode = State(initialValue: vm.debugMode)
+        _vmDir = State(initialValue: (vm.diskPath as NSString).deletingLastPathComponent)
+        _kernelPath = State(initialValue: vm.kernelPath)
+        _initrdPath = State(initialValue: vm.initrdPath)
+        _diskPath = State(initialValue: vm.diskPath)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("Edit VM")
+            Text("编辑虚拟机")
                 .font(.title2)
                 .fontWeight(.semibold)
                 .padding()
 
-            VStack(alignment: .leading, spacing: 16) {
-                VmFormSection(title: "General") {
-                    VmFormRow(label: "Name", labelWidth: labelWidth) {
-                        TextField("", text: $name)
-                            .textFieldStyle(.roundedBorder)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    VmFormSection(title: "常规") {
+                        VmFormRow(label: "Name", labelWidth: labelWidth) {
+                            TextField("", text: $name)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        VmFormRow(label: "CPUs", labelWidth: labelWidth) {
+                            VmSliderRow(value: $cpuCount, range: 1...hostMaxCpus)
+                        }
+                        VmFormRow(label: "Memory", labelWidth: labelWidth) {
+                            VmSliderRow(value: $memoryGb, range: 1...hostMaxMemoryGb, unit: "GB")
+                        }
                     }
-                    VmFormRow(label: "CPUs", labelWidth: labelWidth) {
-                        VmSliderRow(value: $cpuCount, range: 1...hostMaxCpus)
-                    }
-                    VmFormRow(label: "Memory", labelWidth: labelWidth) {
-                        VmSliderRow(value: $memoryGb, range: 1...hostMaxMemoryGb, unit: "GB")
-                    }
-                }
 
-                VmFormSection(title: "Advanced") {
-                    VmFormRow(label: "", labelWidth: labelWidth) {
-                        Toggle("Linux kernel debug log", isOn: $debugMode)
-                            .toggleStyle(.checkbox)
+                    VmFormSection(title: "存储") {
+                        VmFormRow(label: "目录", labelWidth: labelWidth) {
+                            HStack(spacing: 4) {
+                                TextField("虚拟机目录", text: $vmDir)
+                                    .textFieldStyle(.roundedBorder)
+                                    .font(.caption)
+                                Button(action: browseVmDir) {
+                                    Image(systemName: "folder")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.borderless)
+                                .help("选择虚拟机目录")
+                            }
+                            .onChange(of: vmDir) { _ in
+                                autoDetectFiles()
+                            }
+                        }
+                        Text("设置目录后自动检测目录下的内核、引导程序和磁盘文件。")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+
+                        VmFormRow(label: "Disk", labelWidth: labelWidth) {
+                            TextField("磁盘路径", text: $diskPath)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.caption)
+                        }
+                        VmFormRow(label: "Kernel", labelWidth: labelWidth) {
+                            TextField("内核路径", text: $kernelPath)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.caption)
+                        }
+                        VmFormRow(label: "Initrd", labelWidth: labelWidth) {
+                            TextField("引导程序路径", text: $initrdPath)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.caption)
+                        }
+                    }
+
+                    VmFormSection(title: "高级") {
+                        VmFormRow(label: "", labelWidth: labelWidth) {
+                            Toggle("Linux 内核调试日志", isOn: $debugMode)
+                                .toggleStyle(.checkbox)
+                        }
                     }
                 }
+                .padding(.horizontal, 24)
             }
-            .padding(.horizontal, 24)
-
-            Spacer(minLength: 8)
 
             Divider()
 
             HStack {
-                Button("Cancel") { dismiss() }
+                Button("取消") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Save") { saveVm() }
+                Button("保存") { saveVm() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(name.isEmpty)
             }
             .padding(16)
         }
-        .frame(width: 450, height: 320)
+        .frame(width: 520, height: 520)
+    }
+
+    private func browseVmDir() {
+        let panel = NSOpenPanel()
+        panel.title = "选择虚拟机目录"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        if !vmDir.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: vmDir)
+        }
+        if panel.runModal() == .OK, let url = panel.url {
+            vmDir = url.path
+            autoDetectFiles()
+        }
+    }
+
+    /// Scans the VM directory for kernel, initrd, and disk files.
+    private func autoDetectFiles() {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: vmDir) else { return }
+
+        let items: [String]
+        if let contents = try? fm.contentsOfDirectory(atPath: vmDir) {
+            items = contents
+        } else {
+            return
+        }
+
+        // Detect disk: prefer .qcow2, then .raw, then .img
+        let diskExts = ["qcow2", "raw", "img"]
+        let disks = items.filter { item in
+            let ext = (item as NSString).pathExtension.lowercased()
+            return diskExts.contains(ext)
+        }
+        if let first = disks.first {
+            diskPath = (vmDir as NSString).appendingPathComponent(first)
+        }
+
+        // Detect kernel: look for common kernel names
+        let kernelNames = items.filter { item in
+            let name = item.lowercased()
+            return name.hasPrefix("kernel") || name.hasPrefix("vmlinux") || name.hasPrefix("vmlinuz") || name == "image" || name == "bzimage"
+        }
+        if let first = kernelNames.first {
+            kernelPath = (vmDir as NSString).appendingPathComponent(first)
+        }
+
+        // Detect initrd: look for common initrd names
+        let initrdNames = items.filter { item in
+            let name = item.lowercased()
+            return name.hasPrefix("initrd") || name.hasPrefix("initramfs")
+        }
+        if let first = initrdNames.first {
+            initrdPath = (vmDir as NSString).appendingPathComponent(first)
+        }
     }
 
     private func saveVm() {
@@ -798,7 +926,10 @@ struct EditVmDialog: View {
             memoryMb: memoryGb * 1024,
             cpuCount: cpuCount,
             netEnabled: true,
-            debugMode: debugMode
+            debugMode: debugMode,
+            kernelPath: kernelPath,
+            initrdPath: initrdPath,
+            diskPath: diskPath
         )
         dismiss()
     }

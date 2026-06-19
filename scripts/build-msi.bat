@@ -63,9 +63,9 @@ if errorlevel 1 (
     echo ERROR: Signing tenbox-manager.exe failed.
     exit /b 1
 )
-"%SIGNTOOL%" sign %SIGN_ARGS% "%BUILD_DIR%\tenbox-vm-runtime.exe"
+"%SIGNTOOL%" sign %SIGN_ARGS% "%BUILD_DIR%\agentsphere-vm-runtime.exe"
 if errorlevel 1 (
-    echo ERROR: Signing tenbox-vm-runtime.exe failed.
+    echo ERROR: Signing agentsphere-vm-runtime.exe failed.
     exit /b 1
 )
 "%SIGNTOOL%" sign %SIGN_ARGS% "%BUILD_DIR%\WinSparkle.dll"

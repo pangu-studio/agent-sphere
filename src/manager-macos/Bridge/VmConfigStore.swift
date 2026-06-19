@@ -2,18 +2,19 @@ import Foundation
 
 class VmConfigStore {
 
-    static let appSupportDirectory: URL = {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = appSupport.appendingPathComponent("TenBox")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }()
+    private var settings: SettingsStore { SettingsStore.shared }
 
-    static let vmsDirectory: URL = {
-        let dir = appSupportDirectory.appendingPathComponent("vms")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }()
+    /// The effective VM storage directory (may be overridden via settings.json).
+    private var vmsDirectory: URL { settings.vmStorageDirectory }
+
+    /// The default VM storage directory (always ~/Library/Application Support/AgentSphere/vms/).
+    /// Used to discover VMs at the legacy path when a custom vm_storage_dir is active.
+    private var defaultVmsDirectory: URL {
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first!
+        return appSupport.appendingPathComponent("AgentSphere/vms")
+    }
 
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
@@ -26,7 +27,17 @@ class VmConfigStore {
     // MARK: - Paths
 
     func vmDirectory(for vmId: String) -> URL {
-        Self.vmsDirectory.appendingPathComponent(vmId)
+        vmsDirectory.appendingPathComponent(vmId)
+    }
+
+    /// Returns the actual VM directory on disk, checking the effective path first,
+    /// then falling back to the default path.
+    func actualVmDirectory(for vmId: String) -> URL {
+        let url = vmDirectory(for: vmId)
+        if FileManager.default.fileExists(atPath: url.path) {
+            return url
+        }
+        return defaultVmsDirectory.appendingPathComponent(vmId)
     }
 
     func configURL(for vmId: String) -> URL {
@@ -35,14 +46,33 @@ class VmConfigStore {
 
     // MARK: - Read / Write
 
-    func readConfig(vmId: String) -> VmConfig? {
-        let url = configURL(for: vmId)
-        guard let data = try? Data(contentsOf: url) else { return nil }
+    func readConfig(vmId: String, fromDir parentDir: URL? = nil) -> VmConfig? {
+        // Use the hinted directory if provided, otherwise try effective then default.
+        let configUrl: URL
+        if let parent = parentDir {
+            configUrl = parent.appendingPathComponent(vmId).appendingPathComponent("config.json")
+        } else {
+            configUrl = configURL(for: vmId)
+        }
+
+        let data: Data?
+        if FileManager.default.fileExists(atPath: configUrl.path) {
+            data = try? Data(contentsOf: configUrl)
+        } else if parentDir == nil {
+            // Only fall back to default if no explicit directory was given
+            let fallbackUrl = defaultVmsDirectory.appendingPathComponent(vmId).appendingPathComponent("config.json")
+            data = try? Data(contentsOf: fallbackUrl)
+        } else {
+            data = nil
+        }
+        guard let data = data else { return nil }
         guard var config = try? decoder.decode(VmConfig.self, from: data) else { return nil }
-        let vmDir = vmDirectory(for: vmId).path
+
+        // Resolve relative paths against the actual VM directory on disk.
+        let actualVmDir = configUrl.deletingLastPathComponent().path
         func resolve(_ path: String) -> String {
             guard !path.isEmpty, !path.hasPrefix("/") else { return path }
-            return (vmDir as NSString).appendingPathComponent(path)
+            return (actualVmDir as NSString).appendingPathComponent(path)
         }
         config.kernelPath = resolve(config.kernelPath)
         config.initrdPath = resolve(config.initrdPath)
@@ -53,18 +83,36 @@ class VmConfigStore {
     @discardableResult
     func writeConfig(vmId: String, config: VmConfig) -> Bool {
         guard let data = try? encoder.encode(config) else { return false }
-        return FileManager.default.createFile(atPath: configURL(for: vmId).path, contents: data)
+        let url = configURL(for: vmId)
+        // Write to the effective directory if the config already exists there,
+        // otherwise use the default directory.
+        let writeUrl: URL
+        if FileManager.default.fileExists(atPath: url.path) {
+            writeUrl = url
+        } else {
+            let fallbackUrl = defaultVmsDirectory.appendingPathComponent(vmId).appendingPathComponent("config.json")
+            writeUrl = FileManager.default.fileExists(atPath: fallbackUrl.path) ? fallbackUrl : url
+        }
+        return FileManager.default.createFile(atPath: writeUrl.path, contents: data)
     }
 
     // MARK: - List
 
     func listVms() -> [(id: String, config: VmConfig)] {
         let fm = FileManager.default
-        guard let items = try? fm.contentsOfDirectory(atPath: Self.vmsDirectory.path) else { return [] }
+        var seenIds = Set<String>()
         var result: [(id: String, config: VmConfig)] = []
-        for item in items {
-            guard let config = readConfig(vmId: item) else { continue }
-            result.append((id: item, config: config))
+
+        // Scan both the effective VMs directory and the default directory,
+        // so VMs at the legacy path remain visible when a custom path is active.
+        for dir in [vmsDirectory, defaultVmsDirectory] {
+            guard let items = try? fm.contentsOfDirectory(atPath: dir.path) else { continue }
+            for item in items {
+                guard !seenIds.contains(item) else { continue }
+                seenIds.insert(item)
+                guard let config = readConfig(vmId: item, fromDir: dir) else { continue }
+                result.append((id: item, config: config))
+            }
         }
         return result
     }
@@ -118,14 +166,20 @@ class VmConfigStore {
     // MARK: - Edit
 
     @discardableResult
-    func editVm(id: String, name: String, memoryMb: Int, cpuCount: Int,
-                netEnabled: Bool, debugMode: Bool) -> Bool {
+    func editVm(
+        id: String, name: String, memoryMb: Int, cpuCount: Int,
+        netEnabled: Bool, debugMode: Bool,
+        kernelPath: String? = nil, initrdPath: String? = nil, diskPath: String? = nil
+    ) -> Bool {
         guard var config = readConfig(vmId: id) else { return false }
         config.name = name
         config.memoryMb = memoryMb
         config.cpuCount = cpuCount
         config.netEnabled = netEnabled
         config.debugMode = debugMode
+        if let kp = kernelPath { config.kernelPath = kp }
+        if let ip = initrdPath { config.initrdPath = ip }
+        if let dp = diskPath { config.diskPath = dp }
         return writeConfig(vmId: id, config: config)
     }
 
@@ -138,7 +192,14 @@ class VmConfigStore {
         guard let srcConfig = readConfig(vmId: id) else { return nil }
 
         let newId = UUID().uuidString
-        let srcDir = vmDirectory(for: id)
+        // Find the actual source directory (may be in default or effective path).
+        let effectiveSrcDir = vmDirectory(for: id)
+        let srcDir: URL
+        if FileManager.default.fileExists(atPath: effectiveSrcDir.path) {
+            srcDir = effectiveSrcDir
+        } else {
+            srcDir = defaultVmsDirectory.appendingPathComponent(id)
+        }
         let destDir = vmDirectory(for: newId)
 
         do {
@@ -207,7 +268,85 @@ class VmConfigStore {
 
     @discardableResult
     func deleteVm(id: String) -> Bool {
-        return (try? FileManager.default.removeItem(at: vmDirectory(for: id))) != nil
+        let url = vmDirectory(for: id)
+        if FileManager.default.fileExists(atPath: url.path) {
+            return (try? FileManager.default.removeItem(at: url)) != nil
+        }
+        let fallbackUrl = defaultVmsDirectory.appendingPathComponent(id)
+        return (try? FileManager.default.removeItem(at: fallbackUrl)) != nil
+    }
+
+    // MARK: - Migrate
+
+    /// Returns VM IDs that exist in the given directory.
+    func vmsInDirectory(_ dir: URL) -> [String] {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(atPath: dir.path) else { return [] }
+        return items.filter { item in
+            let configPath = dir.appendingPathComponent(item).appendingPathComponent("config.json").path
+            return fm.fileExists(atPath: configPath)
+        }
+    }
+
+    /// Moves a VM directory from srcDir to dstDir. Returns true on success.
+    /// Uses copy + delete fallback for cross-volume moves.
+    /// After moving, rewrites config.json to ensure all paths are relative to the new location.
+    @discardableResult
+    func migrateVm(id: String, from srcDir: URL, to dstDir: URL) -> Bool {
+        let src = srcDir.appendingPathComponent(id)
+        let dst = dstDir.appendingPathComponent(id)
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: src.path) else { return false }
+        guard !fm.fileExists(atPath: dst.path) else { return false }
+        do {
+            try fm.createDirectory(at: dstDir, withIntermediateDirectories: true)
+            try fm.moveItem(at: src, to: dst)
+        } catch {
+            // Cross-volume move not supported; fall back to copy + delete
+            NSLog("Move failed (likely cross-volume), trying copy+delete: %@", error.localizedDescription)
+            do {
+                try fm.copyItem(at: src, to: dst)
+                try fm.removeItem(at: src)
+            } catch {
+                NSLog("Failed to migrate VM %@: %@", id, error.localizedDescription)
+                try? fm.removeItem(at: dst)
+                return false
+            }
+        }
+
+        // Rewrite config.json with paths relative to the new VM directory.
+        rewriteConfigWithRelativePaths(vmId: id, vmDir: dst)
+        return true
+    }
+
+    /// Reads config.json from the given vmDir and rewrites it with paths relative to that directory.
+    /// This ensures that after migration, all paths resolve correctly.
+    private func rewriteConfigWithRelativePaths(vmId: String, vmDir: URL) {
+        let configPath = vmDir.appendingPathComponent("config.json")
+        guard let data = try? Data(contentsOf: configPath),
+              var config = try? decoder.decode(VmConfig.self, from: data) else { return }
+
+        let dirPath = vmDir.path
+        func makeRelative(_ path: String) -> String {
+            guard !path.isEmpty else { return path }
+            // If already under this directory, make it relative
+            if path.hasPrefix(dirPath + "/") {
+                return String(path.dropFirst(dirPath.count + 1))
+            }
+            // If it's already relative, keep it
+            if !path.hasPrefix("/") {
+                return path
+            }
+            // Absolute path elsewhere — keep as-is (file wasn't copied into VM dir)
+            return path
+        }
+
+        config.kernelPath = makeRelative(config.kernelPath)
+        config.initrdPath = makeRelative(config.initrdPath)
+        config.diskPath = makeRelative(config.diskPath)
+
+        guard let newData = try? encoder.encode(config) else { return }
+        try? newData.write(to: configPath)
     }
 
     // MARK: - State
@@ -241,7 +380,9 @@ class VmConfigStore {
     @discardableResult
     func removeSharedFolder(tag: String, fromVm vmId: String) -> Bool {
         guard var config = readConfig(vmId: vmId) else { return false }
-        guard let idx = config.sharedFolders.firstIndex(where: { $0.tag == tag }) else { return false }
+        guard let idx = config.sharedFolders.firstIndex(where: { $0.tag == tag }) else {
+            return false
+        }
         config.sharedFolders.remove(at: idx)
         return writeConfig(vmId: vmId, config: config)
     }
@@ -266,7 +407,9 @@ class VmConfigStore {
     @discardableResult
     func removeHostForward(hostPort: UInt16, fromVm vmId: String) -> Bool {
         guard var config = readConfig(vmId: vmId) else { return false }
-        guard let idx = config.hostForwards.firstIndex(where: { $0.hostPort == hostPort }) else { return false }
+        guard let idx = config.hostForwards.firstIndex(where: { $0.hostPort == hostPort }) else {
+            return false
+        }
         config.hostForwards.remove(at: idx)
         return writeConfig(vmId: vmId, config: config)
     }
@@ -276,7 +419,9 @@ class VmConfigStore {
     @discardableResult
     func addGuestForward(_ gf: GuestForward, toVm vmId: String) -> Bool {
         guard var config = readConfig(vmId: vmId) else { return false }
-        if config.guestForwards.contains(where: { $0.guestIp == gf.guestIp && $0.guestPort == gf.guestPort }) {
+        if config.guestForwards.contains(where: {
+            $0.guestIp == gf.guestIp && $0.guestPort == gf.guestPort
+        }) {
             return false
         }
         config.guestForwards.append(GuestForwardConfig.from(gf))
@@ -286,9 +431,11 @@ class VmConfigStore {
     @discardableResult
     func removeGuestForward(guestIp: String, guestPort: UInt16, fromVm vmId: String) -> Bool {
         guard var config = readConfig(vmId: vmId) else { return false }
-        guard let idx = config.guestForwards.firstIndex(where: {
-            $0.guestIp == guestIp && $0.guestPort == guestPort
-        }) else { return false }
+        guard
+            let idx = config.guestForwards.firstIndex(where: {
+                $0.guestIp == guestIp && $0.guestPort == guestPort
+            })
+        else { return false }
         config.guestForwards.remove(at: idx)
         return writeConfig(vmId: vmId, config: config)
     }

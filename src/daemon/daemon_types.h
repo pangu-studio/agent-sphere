@@ -49,7 +49,7 @@ struct VmRecord {
 struct DaemonConfig {
     std::string data_dir;
     std::string socket_path;
-    std::string runtime_path = "tenbox-vm-runtime";
+    std::string runtime_path = "agentsphere-vm-runtime";
     std::string cloud_url;
 };
 

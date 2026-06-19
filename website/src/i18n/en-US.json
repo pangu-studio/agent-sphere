@@ -4,30 +4,28 @@
     "github": "GitHub"
   },
   "hero": {
-    "title": "TenBox",
+    "title": "AgentSphere",
     "taglines": [
-      "Your Local Lobster Farm",
-      "Hatch Cyber Lobsters in One Click",
-      "Give Your AI a Safe Shell",
-      "An Army of Claws at Your Command",
-      "No Ocean Needed, Just a Box",
-      "Farm Local, Keep Your Data Home"
+      "Your Private AI Lobster Farm",
+      "Deploy Agents. They Work for You.",
+      "No Ocean Needed — Just a Box.",
+      "Farm Locally. Data Never Leaves."
     ],
-    "description": "AI Agents run in an isolated computer — they can only see files you explicitly allow, so your privacy and data stay protected. Supports OpenClaw, QwenPaw and more. One click to create, as easy as installing an app.",
+    "description": "AI Agents run in an isolated computer — they can only see files you explicitly allow, so your privacy and data stay protected. Supports OpenClaw, Hermes and more. One click to create, as easy as installing an app.",
     "cta": "Download Now",
     "cta_win": "Windows",
     "cta_mac": "macOS",
     "cta_linux": "Linux (one-line install)",
     "version": "v0.1.0",
-    "requirements": "Windows 10+ · macOS 12+ (Intel / Apple Silicon) · Debian 11+ / Ubuntu 20.04+ (amd64 / arm64)",
+    "requirements": "Windows 10+ · macOS 12+ (Intel / Apple Silicon)",
     "qq_group": "QQ Help Group",
-    "qq_group_number": "295838092"
+    "qq_group_number": "978612680"
   },
   "features": {
     "title": "Features",
     "oneclick": {
       "title": "One-Click Setup",
-      "desc": "Supports OpenClaw, QwenPaw and other popular AI Agent projects. Just click and create — no technical skills required."
+      "desc": "Supports OpenClaw, Hermes and other popular AI Agent projects. Just click and create — no technical skills required."
     },
     "gui": {
       "title": "Visual Interface",
@@ -39,7 +37,7 @@
     },
     "native": {
       "title": "Native Performance",
-      "desc": "Built directly on native virtualization across Windows / macOS / Linux (WHVP / Hypervisor.framework / KVM). No third-party software needed — fast and lightweight."
+      "desc": "Built directly on native virtualization across Windows / macOS (WHVP / Hypervisor.framework). No third-party software needed — fast and lightweight."
     },
     "virtio": {
       "title": "Seamless Experience",
@@ -54,11 +52,11 @@
     "title": "Get Started in 3 Steps",
     "step1": {
       "title": "Download & Install",
-      "desc": "Install the Windows / macOS package like any other app, or run a single curl command on Linux."
+      "desc": "Install the Windows / macOS package like any other app — download and go."
     },
     "step2": {
       "title": "Pick an Agent",
-      "desc": "Choose the AI Agent you need (OpenClaw / QwenPaw and more), then create it with one click."
+      "desc": "Choose the AI Agent you need (OpenClaw / Hermes and more), then create it with one click."
     },
     "step3": {
       "title": "Start Using",
@@ -83,14 +81,14 @@
       "desc": "Debian 11+ / Ubuntu 20.04+ / Raspberry Pi OS 11+ on amd64 / arm64 (validated on Raspberry Pi 5). Requires glibc 2.31+ and /dev/kvm.",
       "command": "curl -fsSL https://tenbox.ai/install.sh | sudo sh",
       "footnote": "After install, a pairing URL is printed — open the",
-      "footnote_link": "TenBox Cloud Console",
+      "footnote_link": "AgentSphere Cloud Console",
       "footnote_after": "to claim the host and manage it remotely.",
       "copy": "Copy",
       "copied": "Copied"
     }
   },
   "footer": {
-    "copyright": "© 2026 TenClass. Open source under GPL v3.",
+    "copyright": "© 2026 PanguStudio. Open source under GPL v3.",
     "github": "GitHub Repository"
   }
 }

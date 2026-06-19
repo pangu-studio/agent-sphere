@@ -1,21 +1,21 @@
 #!/bin/bash
-# Package TenBox.app into a DMG disk image for distribution.
+# Package Agent Sphere.app into a DMG disk image for distribution.
 #
 # Usage:
-#   ./make-dmg.sh                             # auto-detect universal app
-#   ./make-dmg.sh path/to/TenBox.app          # single app
-#   ./make-dmg.sh path/to/TenBox.app out.dmg  # single app with custom output
+#   ./make-dmg.sh                                      # auto-detect universal app
+#   ./make-dmg.sh "path/to/Agent Sphere.app"           # single app
+#   ./make-dmg.sh "path/to/Agent Sphere.app" out.dmg   # single app with custom output
 #
 # When invoked without arguments, the script looks for
-#   build/TenBox-<VERSION>.app  (universal binary)
+#   "build/Agent Sphere_<VERSION>.app"  (universal binary)
 #
 # Prerequisites:
-#   - TenBox.app must be a valid macOS application bundle
+#   - Agent Sphere.app must be a valid macOS application bundle
 #
 # The script creates a DMG with:
-#   - TenBox.app
+#   - Agent Sphere.app
 #   - A symlink to /Applications for drag-and-drop install
-#   - tenbox-vm-runtime bundled inside the .app
+#   - agentsphere-vm-runtime bundled inside the .app
 
 set -e
 
@@ -29,14 +29,14 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
-VOLUME_NAME="TenBox"
+VOLUME_NAME="Agent Sphere"
 
 # ── Build DMG for a single .app ─────────────────────────────────────────────
 make_dmg_for_app() {
     local APP_PATH="$1"
     local OUTPUT="$2"
 
-    OUTPUT="${OUTPUT:-$BUILD_DIR/TenBox-${VERSION}.dmg}"
+    OUTPUT="${OUTPUT:-$BUILD_DIR/Agent Sphere_${VERSION}.dmg}"
 
     if [ ! -d "$APP_PATH" ]; then
         echo "Error: Application bundle not found: $APP_PATH"
@@ -49,7 +49,7 @@ make_dmg_for_app() {
     echo "──────────────────────────────────────────────"
 
     # Sign the app if a signing identity is available
-    local ENTITLEMENTS="$SCRIPT_DIR/../src/manager-macos/Resources/TenBox.entitlements"
+    local ENTITLEMENTS="$SCRIPT_DIR/../src/manager-macos/Resources/AgentSphere.entitlements"
     if security find-identity -v -p codesigning 2>/dev/null | grep -q "Developer ID"; then
         local IDENTITY
         IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID" | head -1 | awk -F'"' '{print $2}')
@@ -72,18 +72,18 @@ make_dmg_for_app() {
 
     rm -f "$OUTPUT"
 
-    # If the .app has a build name (e.g. TenBox-0.4.2.app), stage it as
-    # TenBox.app so the DMG always shows the clean name to users.
+    # If the .app has a build name (e.g. "Agent Sphere_0.4.2.app"), stage it as
+    # "Agent Sphere.app" so the DMG always shows the clean name to users.
     local DMG_APP_PATH="$APP_PATH"
     local STAGING_DIR=""
     local APP_BASENAME
     APP_BASENAME=$(basename "$APP_PATH")
-    if [ "$APP_BASENAME" != "TenBox.app" ]; then
+    if [ "$APP_BASENAME" != "Agent Sphere.app" ]; then
         STAGING_DIR="$BUILD_DIR/.dmg-staging-$$"
         rm -rf "$STAGING_DIR"
         mkdir -p "$STAGING_DIR"
-        cp -R "$APP_PATH" "$STAGING_DIR/TenBox.app"
-        DMG_APP_PATH="$STAGING_DIR/TenBox.app"
+        cp -R "$APP_PATH" "$STAGING_DIR/Agent Sphere.app"
+        DMG_APP_PATH="$STAGING_DIR/Agent Sphere.app"
     fi
 
     echo "Building styled DMG..."
@@ -136,14 +136,14 @@ make_dmg_for_app() {
 if [ $# -ge 1 ]; then
     make_dmg_for_app "$1" "$2"
 else
-    APP="$BUILD_DIR/TenBox-${VERSION}.app"
+    APP="$BUILD_DIR/Agent Sphere_${VERSION}.app"
     if [ -d "$APP" ]; then
         make_dmg_for_app "$APP" ""
     else
         echo "Error: App bundle not found: $APP"
         echo ""
         echo "Run build-macos.sh first, or specify the .app path explicitly:"
-        echo "  $0 path/to/TenBox.app"
+        echo "  $0 \"path/to/Agent Sphere.app\""
         exit 1
     fi
 fi

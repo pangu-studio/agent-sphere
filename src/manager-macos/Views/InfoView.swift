@@ -10,14 +10,14 @@ struct InfoView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                GroupBox("General") {
+                GroupBox("常规") {
                     VStack(alignment: .leading, spacing: 8) {
-                        InfoRow(label: "Name", value: vm.name)
-                        InfoRow(label: "State", value: vm.state.displayName)
-                        InfoRow(label: "CPUs", value: "\(vm.cpuCount)")
-                        InfoRow(label: "Memory", value: "\(vm.memoryMb) MB")
+                        InfoRow(label: "名称", value: vm.name)
+                        InfoRow(label: "状态", value: vm.state.displayName)
+                        InfoRow(label: "CPU", value: "\(vm.cpuCount)")
+                        InfoRow(label: "内存", value: "\(vm.memoryMb) MB")
                         HStack(spacing: 16) {
-                            Text("Directory")
+                            Text("目录")
                                 .foregroundStyle(.secondary)
                                 .frame(width: 70, alignment: .trailing)
                             HStack(spacing: 6) {
@@ -33,7 +33,7 @@ struct InfoView: View {
                                         .font(.caption)
                                 }
                                 .buttonStyle(.borderless)
-                                .help("Open in Finder")
+                                .help("在 Finder 中打开")
                             }
                         }
                     }
@@ -71,27 +71,27 @@ struct AddSharedFolderSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("Add Shared Folder")
+            Text("添加共享文件夹")
                 .font(.title3)
                 .fontWeight(.semibold)
                 .padding()
 
             Form {
-                TextField("Tag", text: $tag)
+                TextField("标签", text: $tag)
                     .disableAutocorrection(true)
                 HStack {
-                    TextField("Host Path", text: $hostPath)
-                    Button("Browse...") { browseFolder() }
+                    TextField("宿主机路径", text: $hostPath)
+                    Button("浏览...") { browseFolder() }
                 }
-                Toggle("Read Only", isOn: $readonly)
+                Toggle("只读", isOn: $readonly)
             }
             .padding(.horizontal)
 
             HStack {
-                Button("Cancel") { dismiss() }
+                Button("取消") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Add") { addFolder() }
+                Button("添加") { addFolder() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(tag.isEmpty || hostPath.isEmpty)
             }
@@ -102,7 +102,7 @@ struct AddSharedFolderSheet: View {
 
     private func browseFolder() {
         let panel = NSOpenPanel()
-        panel.title = "Select Shared Folder"
+        panel.title = "选择共享文件夹"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
@@ -151,26 +151,26 @@ struct AddHostForwardSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(isEditing ? "Edit Host → Guest" : "Host → Guest")
+            Text(isEditing ? "编辑宿主机 → 虚拟机" : "宿主机 → 虚拟机")
                 .font(.title3)
                 .fontWeight(.semibold)
                 .padding()
 
             Form {
-                TextField("Name (optional)", text: $nameText)
+                TextField("名称（可选）", text: $nameText)
                     .disableAutocorrection(true)
                     .focused($focusedField, equals: .name)
-                TextField("Host IP", text: $hostIpText)
+                TextField("宿主机 IP", text: $hostIpText)
                     .disableAutocorrection(true)
                     .focused($focusedField, equals: .hostIp)
-                TextField("Host Port", text: $hostPortText)
+                TextField("宿主机端口", text: $hostPortText)
                     .disableAutocorrection(true)
                     .focused($focusedField, equals: .hostPort)
-                TextField("Guest IP", text: .constant(guestIpText))
+                TextField("虚拟机 IP", text: .constant(guestIpText))
                     .disableAutocorrection(true)
                     .disabled(true)
                     .foregroundStyle(.secondary)
-                TextField("Guest Port", text: $guestPortText)
+                TextField("虚拟机端口", text: $guestPortText)
                     .disableAutocorrection(true)
                     .focused($focusedField, equals: .guestPort)
             }
@@ -186,10 +186,10 @@ struct AddHostForwardSheet: View {
             }
 
             HStack {
-                Button("Cancel") { dismiss() }
+                Button("取消") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button(isEditing ? "Save" : "Add") { addHostForward() }
+                Button(isEditing ? "保存" : "添加") { addHostForward() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!isValid)
             }
@@ -234,25 +234,25 @@ struct AddGuestForwardSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(isEditing ? "Edit Guest → Host" : "Guest → Host")
+            Text(isEditing ? "编辑虚拟机 → 宿主机" : "虚拟机 → 宿主机")
                 .font(.title3)
                 .fontWeight(.semibold)
                 .padding()
 
             Form {
-                TextField("Name (optional)", text: $nameText)
+                TextField("名称（可选）", text: $nameText)
                     .disableAutocorrection(true)
                     .focused($focusedField, equals: .name)
-                TextField("Guest IP", text: $guestIpText)
+                TextField("虚拟机 IP", text: $guestIpText)
                     .disableAutocorrection(true)
                     .focused($focusedField, equals: .guestIp)
-                TextField("Guest Port", text: $guestPortText)
+                TextField("虚拟机端口", text: $guestPortText)
                     .disableAutocorrection(true)
                     .focused($focusedField, equals: .guestPort)
-                TextField("Host Address", text: $hostAddrText)
+                TextField("宿主机地址", text: $hostAddrText)
                     .disableAutocorrection(true)
                     .focused($focusedField, equals: .hostAddr)
-                TextField("Host Port", text: $hostPortText)
+                TextField("宿主机端口", text: $hostPortText)
                     .disableAutocorrection(true)
                     .focused($focusedField, equals: .hostPort)
             }
@@ -269,10 +269,10 @@ struct AddGuestForwardSheet: View {
             }
 
             HStack {
-                Button("Cancel") { dismiss() }
+                Button("取消") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button(isEditing ? "Save" : "Add") { addGuestForward() }
+                Button(isEditing ? "保存" : "添加") { addGuestForward() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!isValid)
             }
@@ -304,14 +304,14 @@ struct SharedFoldersSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("Shared Folders")
+            Text("共享文件夹")
                 .font(.title3)
                 .fontWeight(.semibold)
                 .padding()
 
             if let vm = vm {
                 if vm.sharedFolders.isEmpty {
-                    Text("No shared folders")
+                    Text("暂无共享文件夹")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -331,7 +331,7 @@ struct SharedFoldersSheet: View {
                                 }
                                 Spacer()
                                 if folder.readonly {
-                                    Text("RO")
+                                    Text("只读")
                                         .font(.caption2)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
@@ -350,20 +350,20 @@ struct SharedFoldersSheet: View {
                 }
             }
 
-            Text("Shared folders appear as desktop shortcuts in the VM, making it easy to exchange files between host and guest.")
+            Text("共享文件夹将作为桌面快捷方式出现在虚拟机中，方便在宿主机与虚拟机之间交换文件。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal)
                 .padding(.bottom, 4)
 
             HStack {
-                Button("Done") { dismiss() }
+                Button("完成") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button {
                     showAddSheet = true
                 } label: {
-                    Label("Add", systemImage: "plus")
+                    Label("添加", systemImage: "plus")
                 }
                 .keyboardShortcut(.defaultAction)
             }
@@ -392,9 +392,9 @@ struct PortForwardsSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             if let vm = vm {
-                // Host -> Guest section
+                // 宿主机 -> 虚拟机 section
                 HStack {
-                    Text("Host \u{2192} Guest")
+                    Text("宿主机 \u{2192} 虚拟机")
                         .font(.headline)
                     Spacer()
                     Button {
@@ -408,7 +408,7 @@ struct PortForwardsSheet: View {
                 .padding(.top)
 
                 if vm.hostForwards.isEmpty {
-                    Text("No port forwards")
+                    Text("暂无端口转发")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -435,7 +435,7 @@ struct PortForwardsSheet: View {
                                         .font(.caption)
                                 }
                                 .buttonStyle(.borderless)
-                                .help("Edit")
+                                .help("编辑")
                                 Button(role: .destructive) {
                                     appState.removeHostForward(hostPort: pf.hostPort, fromVm: vmId)
                                 } label: {
@@ -449,9 +449,9 @@ struct PortForwardsSheet: View {
 
                 Divider()
 
-                // Guest -> Host section
+                // 虚拟机 -> 宿主机 section
                 HStack {
-                    Text("Guest \u{2192} Host")
+                    Text("虚拟机 \u{2192} 宿主机")
                         .font(.headline)
                     Spacer()
                     Button {
@@ -465,7 +465,7 @@ struct PortForwardsSheet: View {
                 .padding(.top, 8)
 
                 if vm.guestForwards.isEmpty {
-                    Text("No guest forwards")
+                    Text("暂无反向转发")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -491,7 +491,7 @@ struct PortForwardsSheet: View {
                                         .font(.caption)
                                 }
                                 .buttonStyle(.borderless)
-                                .help("Edit")
+                                .help("编辑")
                                 Button(role: .destructive) {
                                     appState.removeGuestForward(guestIp: gf.guestIp, guestPort: gf.guestPort, fromVm: vmId)
                                 } label: {
@@ -505,7 +505,7 @@ struct PortForwardsSheet: View {
             }
 
             HStack {
-                Button("Done") { dismiss() }
+                Button("完成") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
             }

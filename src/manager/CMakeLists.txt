@@ -6,6 +6,9 @@ add_executable(tenbox-manager WIN32
     ${CMAKE_SOURCE_DIR}/src/manager/http_download.cpp
     ${CMAKE_SOURCE_DIR}/src/manager/app.manifest
     ${CMAKE_SOURCE_DIR}/src/manager/toolbar.rc
+    # OIDC login
+    ${CMAKE_SOURCE_DIR}/src/manager/oidc_client.cpp
+    ${CMAKE_SOURCE_DIR}/src/manager/oidc_token_store_win.cpp
     # UI layer
     ${CMAKE_SOURCE_DIR}/src/manager/ui/win32_ui_shell.cpp
     ${CMAKE_SOURCE_DIR}/src/manager/ui/create_vm_dialog.cpp
@@ -13,6 +16,7 @@ add_executable(tenbox-manager WIN32
     ${CMAKE_SOURCE_DIR}/src/manager/ui/shared_folders_dialog.cpp
     ${CMAKE_SOURCE_DIR}/src/manager/ui/port_forward_dialog.cpp
     ${CMAKE_SOURCE_DIR}/src/manager/ui/llm_proxy_dialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/manager/ui/login_dialog.cpp
     ${CMAKE_SOURCE_DIR}/src/manager/ui/settings_dialog.cpp
     ${CMAKE_SOURCE_DIR}/src/manager/ui/win32_display_panel.cpp
     ${CMAKE_SOURCE_DIR}/src/manager/ui/info_tab.cpp

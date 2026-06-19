@@ -57,7 +57,7 @@ def main():
 
     app_basename = os.path.basename(app_path)
     # Temporary volume name avoids Gatekeeper blocking ditto when
-    # .app name matches volume name (e.g. TenBox.app -> /Volumes/TenBox/)
+    # .app name matches volume name (e.g. Agent Sphere.app -> /Volumes/Agent Sphere/)
     tmp_volname = volume_name + " _build"
 
     with tempfile.TemporaryDirectory() as tmpdir:
