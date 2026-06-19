@@ -1,4 +1,4 @@
-Package: tenbox
+Package: agentsphere
 Version: @VERSION@
 Section: admin
 Priority: optional
@@ -9,13 +9,13 @@ Pre-Depends: adduser
 Depends: libc6 (>= 2.31),
  ca-certificates
 Suggests: qemu-utils
-Description: TenBox virtualization daemon and CLI
- TenBox is a single-host VM monitor with cloud-managed remote desktop.
+Description: AgentSphere virtualization daemon and CLI
+ AgentSphere is a single-host VM monitor with cloud-managed remote desktop.
  The daemon talks to KVM directly through /dev/kvm and ships its own
  virtio devices, qcow2 backend, and user-mode network stack, so it
  does NOT fork qemu-system-*. This package ships the headless daemon
- (tenboxd), the per-VM runtime (agentsphere-vm-runtime) and the local CLI
- (tenbox). FFmpeg / libx264 / libopus / libyuv / libcurl / OpenSSL are
+ (agentsphered), the per-VM runtime (agentsphere-vm-runtime) and the local CLI
+ (agentsphere). FFmpeg / libx264 / libopus / libyuv / libcurl / OpenSSL are
  statically linked and libstdc++ / libgcc are baked in via
  -static-libstdc++ / -static-libgcc, so the only runtime requirements
  are the system libc (>= 2.31) and ca-certificates. qemu-utils (for

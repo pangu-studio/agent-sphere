@@ -5,7 +5,7 @@
 Cross-platform VMM for running AI agents in isolated Linux VMs.
 
 - **Windows / macOS**: native GUI manager (`tenbox-manager.exe` / `AgentSphere.app`) launches per-VM `agentsphere-vm-runtime` processes.
-- **Linux**: `agentsphered` daemon manages VM lifecycle, exposes a local `tenbox` CLI, and provides optional browser-based remote desktop via WebRTC.
+- **Linux**: `agentsphered` daemon manages VM lifecycle, exposes a local `agentsphere` CLI, and provides optional browser-based remote desktop via WebRTC.
 
 All platforms share `src/core/` (VMM engine), `src/platform/` (hypervisor backends), `src/ipc/` (manager↔runtime protocol), and `src/runtime/` (the runtime process). Linux adds `src/daemon/`, `src/cli/`, and `src/client/`.
 
@@ -34,7 +34,7 @@ src/
 │   ├── llm_proxy.cpp       OpenAI-compatible HTTP reverse proxy
 │   ├── kvm_doctor.cpp      KVM support check
 │   └── host_settings.cpp   LLM proxy config persistence
-├── cli/            tenbox CLI (src/cli/main.cpp)
+├── cli/            agentsphere CLI (src/cli/main.cpp)
 ├── client/         Local RPC client library (src/client/client.cpp)
 ├── manager/        Windows GUI (Win32)
 └── manager-macos/  macOS GUI (SwiftUI/AppKit)
@@ -55,16 +55,16 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
 ctest --test-dir build
 
 # KVM check
-tenbox doctor            # via CLI
+agentsphere doctor            # via CLI
 agentsphered --doctor         # standalone
 
 # VM lifecycle
-tenbox vm create --name my-vm --kernel build/Image --disk build/rootfs.qcow2
-tenbox vm start <id>
-tenbox vm console <id>
-tenbox vm logs <id> -f
-tenbox vm stop <id>
-tenbox vm ls
+agentsphere vm create --name my-vm --kernel build/Image --disk build/rootfs.qcow2
+agentsphere vm start <id>
+agentsphere vm console <id>
+agentsphere vm logs <id> -f
+agentsphere vm stop <id>
+agentsphere vm ls
 ```
 
 ## Architecture quick reference
