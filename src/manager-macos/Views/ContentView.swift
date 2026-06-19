@@ -179,6 +179,9 @@ struct ContentView: View {
         .sheet(isPresented: $appState.showLlmProxySheet) {
             LlmProxySheet()
         }
+        .sheet(isPresented: $appState.showSettings) {
+            SettingsView()
+        }
         .alert("删除 Agent Box", isPresented: $appState.showDeleteConfirm) {
             Button("取消", role: .cancel) {}
             Button("删除", role: .destructive) {

@@ -11,21 +11,15 @@ class ImageSourceService: ObservableObject {
     // MARK: - Directory helpers
 
     var imagesDir: String {
-        let dir = appSupportDir + "/images"
-        try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        return dir
+        SettingsStore.shared.imageCacheDirectory.path
     }
 
     private var appSupportDir: String {
-        let paths = NSSearchPathForDirectoriesInDomains(
-            .applicationSupportDirectory, .userDomainMask, true)
-        let dir = (paths.first ?? NSHomeDirectory() + "/Library/Application Support") + "/AgentSphere"
-        try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        return dir
+        SettingsStore.shared.appSupportDirectory.path
     }
 
     private var settingsPath: String {
-        appSupportDir + "/settings.json"
+        SettingsStore.shared.settingsPath
     }
 
     // MARK: - Default & effective sources
@@ -261,7 +255,7 @@ class ImageSourceService: ObservableObject {
     }
 
     func existingVmNames() throws -> [String] {
-        let vmsDir = appSupportDir + "/vms"
+        let vmsDir = SettingsStore.shared.vmStorageDirectory.path
         guard fm.fileExists(atPath: vmsDir) else { return [] }
         guard let items = try? fm.contentsOfDirectory(atPath: vmsDir) else { return [] }
         var names: [String] = []

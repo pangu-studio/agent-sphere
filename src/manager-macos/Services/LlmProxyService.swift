@@ -17,10 +17,7 @@ final class LlmProxyService {
     private var currentLogDate = ""
 
     static var logDir: String {
-        let paths = NSSearchPathForDirectoriesInDomains(
-            .applicationSupportDirectory, .userDomainMask, true)
-        let base = (paths.first ?? NSHomeDirectory() + "/Library/Application Support") + "/AgentSphere"
-        return base + "/llm_logs"
+        SettingsStore.shared.llmLogDirectory.path
     }
 
     func updateMappings(_ newMappings: [LlmModelMapping]) {

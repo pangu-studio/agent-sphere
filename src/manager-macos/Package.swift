@@ -44,12 +44,14 @@ let package = Package(
                 "Bridge/TenBoxBridgeWrapper.swift",
                 "Bridge/IpcClientWrapper.swift",
                 "Bridge/VmConfigStore.swift",
+                "Bridge/SettingsStore.swift",
                 "Bridge/VmProcessManager.swift",
                 "Services/ImageSourceService.swift",
                 "Services/LlmProxyService.swift",
                 "Services/OidcService.swift",
                 "Views/LlmProxyView.swift",
                 "Views/LoginView.swift",
+                "Views/SettingsView.swift",
             ],
             resources: [
                 .copy("Resources/icon.png")

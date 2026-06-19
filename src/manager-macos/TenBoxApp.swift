@@ -137,7 +137,12 @@ struct TenBoxApp: App {
             CommandMenu("沙箱") {
                 VmCommandMenuContent(appState: appDelegate.appState)
             }
-            CommandGroup(replacing: .toolbar) {}
+            CommandGroup(replacing: .appSettings) {
+                Button("偏好设置...") {
+                    appDelegate.appState.showSettings = true
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
             CommandGroup(replacing: .sidebar) {}
             CommandGroup(replacing: .help) {
                 Button("Agent Sphere 网站...") {
@@ -158,6 +163,7 @@ class AppState: ObservableObject {
     @Published var selectedVmId: String?
     @Published var showCreateVmDialog = false
     @Published var showEditVmDialog = false
+    @Published var showSettings = false
     @Published var showKeyboardCapturePermissionAlert = false
     @Published var showLlmProxySheet = false
     @Published var showDeleteConfirm = false
@@ -180,11 +186,7 @@ class AppState: ObservableObject {
     /// 从 settings.json 读取 api_host，未配置时返回默认值。
     /// 供 Sparkle delegate 等在 AppState 实例不可用时调用。
     nonisolated static func loadApiHost() -> String {
-        let paths = NSSearchPathForDirectoriesInDomains(
-            .applicationSupportDirectory, .userDomainMask, true)
-        let dir =
-            (paths.first ?? NSHomeDirectory() + "/Library/Application Support") + "/AgentSphere"
-        let settingsPath = dir + "/settings.json"
+        let settingsPath = SettingsStore.shared.settingsPath
         guard let data = FileManager.default.contents(atPath: settingsPath),
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let host = json["api_host"] as? String, !host.isEmpty
@@ -366,11 +368,13 @@ class AppState: ObservableObject {
     }
 
     func editVm(
-        id: String, name: String, memoryMb: Int, cpuCount: Int, netEnabled: Bool, debugMode: Bool
+        id: String, name: String, memoryMb: Int, cpuCount: Int, netEnabled: Bool, debugMode: Bool,
+        kernelPath: String? = nil, initrdPath: String? = nil, diskPath: String? = nil
     ) {
         bridge.editVm(
             id: id, name: name, memoryMb: memoryMb, cpuCount: cpuCount, netEnabled: netEnabled,
-            debugMode: debugMode)
+            debugMode: debugMode,
+            kernelPath: kernelPath, initrdPath: initrdPath, diskPath: diskPath)
         refreshVmList()
     }
 
@@ -548,12 +552,7 @@ class AppState: ObservableObject {
     // MARK: - LLM Proxy settings
 
     private var settingsPath: String {
-        let paths = NSSearchPathForDirectoriesInDomains(
-            .applicationSupportDirectory, .userDomainMask, true)
-        let dir =
-            (paths.first ?? NSHomeDirectory() + "/Library/Application Support") + "/AgentSphere"
-        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        return dir + "/settings.json"
+        SettingsStore.shared.settingsPath
     }
 
     func loadLlmMappings() {

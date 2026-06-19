@@ -21,9 +21,11 @@ class TenBoxBridgeWrapper {
         configStore.createVm(from: config)
     }
 
-    func editVm(id: String, name: String, memoryMb: Int, cpuCount: Int, netEnabled: Bool, debugMode: Bool) {
+    func editVm(id: String, name: String, memoryMb: Int, cpuCount: Int, netEnabled: Bool, debugMode: Bool,
+                kernelPath: String? = nil, initrdPath: String? = nil, diskPath: String? = nil) {
         configStore.editVm(id: id, name: name, memoryMb: memoryMb, cpuCount: cpuCount,
-                           netEnabled: netEnabled, debugMode: debugMode)
+                           netEnabled: netEnabled, debugMode: debugMode,
+                           kernelPath: kernelPath, initrdPath: initrdPath, diskPath: diskPath)
     }
 
     @discardableResult
@@ -38,7 +40,7 @@ class TenBoxBridgeWrapper {
     @discardableResult
     func startVm(id: String) -> Bool {
         guard let config = configStore.readConfig(vmId: id) else { return false }
-        let vmDir = configStore.vmDirectory(for: id)
+        let vmDir = configStore.actualVmDirectory(for: id)
         let socketPath = TBIpcServer.socketPath(forVm: id)
 
         guard ipcServer.listen(forVm: id, socketPath: socketPath) else { return false }

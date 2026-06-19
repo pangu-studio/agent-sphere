@@ -759,6 +759,10 @@ struct EditVmDialog: View {
     @State private var memoryGb: Int
     @State private var cpuCount: Int
     @State private var debugMode: Bool
+    @State private var vmDir: String
+    @State private var kernelPath: String
+    @State private var initrdPath: String
+    @State private var diskPath: String
 
     private let labelWidth: CGFloat = 72
 
@@ -768,53 +772,151 @@ struct EditVmDialog: View {
         _memoryGb = State(initialValue: max(1, vm.memoryMb / 1024))
         _cpuCount = State(initialValue: vm.cpuCount)
         _debugMode = State(initialValue: vm.debugMode)
+        _vmDir = State(initialValue: (vm.diskPath as NSString).deletingLastPathComponent)
+        _kernelPath = State(initialValue: vm.kernelPath)
+        _initrdPath = State(initialValue: vm.initrdPath)
+        _diskPath = State(initialValue: vm.diskPath)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("Edit VM")
+            Text("编辑虚拟机")
                 .font(.title2)
                 .fontWeight(.semibold)
                 .padding()
 
-            VStack(alignment: .leading, spacing: 16) {
-                VmFormSection(title: "General") {
-                    VmFormRow(label: "Name", labelWidth: labelWidth) {
-                        TextField("", text: $name)
-                            .textFieldStyle(.roundedBorder)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    VmFormSection(title: "常规") {
+                        VmFormRow(label: "Name", labelWidth: labelWidth) {
+                            TextField("", text: $name)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        VmFormRow(label: "CPUs", labelWidth: labelWidth) {
+                            VmSliderRow(value: $cpuCount, range: 1...hostMaxCpus)
+                        }
+                        VmFormRow(label: "Memory", labelWidth: labelWidth) {
+                            VmSliderRow(value: $memoryGb, range: 1...hostMaxMemoryGb, unit: "GB")
+                        }
                     }
-                    VmFormRow(label: "CPUs", labelWidth: labelWidth) {
-                        VmSliderRow(value: $cpuCount, range: 1...hostMaxCpus)
-                    }
-                    VmFormRow(label: "Memory", labelWidth: labelWidth) {
-                        VmSliderRow(value: $memoryGb, range: 1...hostMaxMemoryGb, unit: "GB")
-                    }
-                }
 
-                VmFormSection(title: "Advanced") {
-                    VmFormRow(label: "", labelWidth: labelWidth) {
-                        Toggle("Linux kernel debug log", isOn: $debugMode)
-                            .toggleStyle(.checkbox)
+                    VmFormSection(title: "存储") {
+                        VmFormRow(label: "目录", labelWidth: labelWidth) {
+                            HStack(spacing: 4) {
+                                TextField("虚拟机目录", text: $vmDir)
+                                    .textFieldStyle(.roundedBorder)
+                                    .font(.caption)
+                                Button(action: browseVmDir) {
+                                    Image(systemName: "folder")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.borderless)
+                                .help("选择虚拟机目录")
+                            }
+                            .onChange(of: vmDir) { _ in
+                                autoDetectFiles()
+                            }
+                        }
+                        Text("设置目录后自动检测目录下的内核、引导程序和磁盘文件。")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+
+                        VmFormRow(label: "Disk", labelWidth: labelWidth) {
+                            TextField("磁盘路径", text: $diskPath)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.caption)
+                        }
+                        VmFormRow(label: "Kernel", labelWidth: labelWidth) {
+                            TextField("内核路径", text: $kernelPath)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.caption)
+                        }
+                        VmFormRow(label: "Initrd", labelWidth: labelWidth) {
+                            TextField("引导程序路径", text: $initrdPath)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.caption)
+                        }
+                    }
+
+                    VmFormSection(title: "高级") {
+                        VmFormRow(label: "", labelWidth: labelWidth) {
+                            Toggle("Linux 内核调试日志", isOn: $debugMode)
+                                .toggleStyle(.checkbox)
+                        }
                     }
                 }
+                .padding(.horizontal, 24)
             }
-            .padding(.horizontal, 24)
-
-            Spacer(minLength: 8)
 
             Divider()
 
             HStack {
-                Button("Cancel") { dismiss() }
+                Button("取消") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Save") { saveVm() }
+                Button("保存") { saveVm() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(name.isEmpty)
             }
             .padding(16)
         }
-        .frame(width: 450, height: 320)
+        .frame(width: 520, height: 520)
+    }
+
+    private func browseVmDir() {
+        let panel = NSOpenPanel()
+        panel.title = "选择虚拟机目录"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        if !vmDir.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: vmDir)
+        }
+        if panel.runModal() == .OK, let url = panel.url {
+            vmDir = url.path
+            autoDetectFiles()
+        }
+    }
+
+    /// Scans the VM directory for kernel, initrd, and disk files.
+    private func autoDetectFiles() {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: vmDir) else { return }
+
+        let items: [String]
+        if let contents = try? fm.contentsOfDirectory(atPath: vmDir) {
+            items = contents
+        } else {
+            return
+        }
+
+        // Detect disk: prefer .qcow2, then .raw, then .img
+        let diskExts = ["qcow2", "raw", "img"]
+        let disks = items.filter { item in
+            let ext = (item as NSString).pathExtension.lowercased()
+            return diskExts.contains(ext)
+        }
+        if let first = disks.first {
+            diskPath = (vmDir as NSString).appendingPathComponent(first)
+        }
+
+        // Detect kernel: look for common kernel names
+        let kernelNames = items.filter { item in
+            let name = item.lowercased()
+            return name.hasPrefix("kernel") || name.hasPrefix("vmlinux") || name.hasPrefix("vmlinuz") || name == "image" || name == "bzimage"
+        }
+        if let first = kernelNames.first {
+            kernelPath = (vmDir as NSString).appendingPathComponent(first)
+        }
+
+        // Detect initrd: look for common initrd names
+        let initrdNames = items.filter { item in
+            let name = item.lowercased()
+            return name.hasPrefix("initrd") || name.hasPrefix("initramfs")
+        }
+        if let first = initrdNames.first {
+            initrdPath = (vmDir as NSString).appendingPathComponent(first)
+        }
     }
 
     private func saveVm() {
@@ -824,7 +926,10 @@ struct EditVmDialog: View {
             memoryMb: memoryGb * 1024,
             cpuCount: cpuCount,
             netEnabled: true,
-            debugMode: debugMode
+            debugMode: debugMode,
+            kernelPath: kernelPath,
+            initrdPath: initrdPath,
+            diskPath: diskPath
         )
         dismiss()
     }
