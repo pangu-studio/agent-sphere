@@ -437,7 +437,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     lightdm \
     xserver-xorg-core xserver-xorg-input-libinput \
     xfonts-base fonts-dejavu-core fonts-liberation fonts-noto-cjk fonts-noto-color-emoji \
-    adwaita-icon-theme-legacy \
+    adwaita-icon-theme \
     locales \
     dbus-x11 at-spi2-core \
     polkitd pkexec lxpolkit \
